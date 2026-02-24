@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Self-hosted observability dashboard for Conway Automaton">
+  <title>Automaton Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">◆</div>
+      <h1>Automaton</h1>
+    </div>
+    <ul class="nav-list">
+      <li><a href="#status" class="nav-link active" data-section="status">
+        <span class="nav-icon">⚡</span> Status
+      </a></li>
+      <li><a href="#children" class="nav-link" data-section="children">
+        <span class="nav-icon">🧬</span> Children
+      </a></li>
+      <li><a href="#activity" class="nav-link" data-section="activity">
+        <span class="nav-icon">📊</span> Activity
+      </a></li>
+      <li><a href="#heartbeat" class="nav-link" data-section="heartbeat">
+        <span class="nav-icon">💓</span> Heartbeat
+      </a></li>
+      <li><a href="#ledger" class="nav-link" data-section="ledger">
+        <span class="nav-icon">💰</span> Ledger
+      </a></li>
+      <li><a href="#soul" class="nav-link" data-section="soul">
+        <span class="nav-icon">🔮</span> Soul
+      </a></li>
+      <li><a href="#config" class="nav-link" data-section="config">
+        <span class="nav-icon">⚙️</span> Config
+      </a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="connection-badge" id="connBadge">
+        <span class="dot"></span> <span id="connText">Checking…</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main" id="main">
+    <header class="topbar">
+      <h2 id="pageTitle">Status</h2>
+      <button class="btn btn-refresh" id="refreshBtn" onclick="window.__refresh()">
+        ↻ Refresh
+      </button>
+    </header>
+    <div class="content" id="content">
+      <div class="loading">Loading…</div>
+    </div>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
