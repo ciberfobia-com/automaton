@@ -1002,6 +1002,33 @@ export function getReadyTasks(db: DatabaseType): TaskGraphRow[] {
   return rows.map(deserializeTaskGraphRow);
 }
 
+/**
+ * Get tasks assigned to a specific agent address that haven't been picked up yet.
+ * Used by workers to find tasks the orchestrator assigned to them.
+ */
+export function getAssignedTasksForAgent(db: DatabaseType, agentAddress: string): TaskGraphRow[] {
+  const rows = db.prepare(
+    `SELECT * FROM task_graph
+     WHERE status = 'assigned' AND assigned_to = ?
+     ORDER BY priority DESC, created_at ASC`,
+  ).all(agentAddress) as any[];
+  return rows.map(deserializeTaskGraphRow);
+}
+
+/**
+ * Atomically claim an assigned task — transition to 'running' and set started_at.
+ * Returns true if the claim succeeded (exactly 1 row updated), false if another
+ * worker already claimed it or the status changed.
+ */
+export function claimAssignedTask(db: DatabaseType, taskId: string, agentAddress: string): boolean {
+  const now = new Date().toISOString();
+  const result = db.prepare(
+    `UPDATE task_graph SET status = 'running', started_at = COALESCE(started_at, ?)
+     WHERE id = ? AND status = 'assigned' AND assigned_to = ?`,
+  ).run(now, taskId, agentAddress);
+  return result.changes > 0;
+}
+
 export function getTasksByGoal(db: DatabaseType, goalId: string): TaskGraphRow[] {
   const rows = db
     .prepare("SELECT * FROM task_graph WHERE goal_id = ? ORDER BY priority DESC, created_at ASC")

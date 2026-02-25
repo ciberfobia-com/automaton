@@ -17,6 +17,7 @@ import path from "node:path";
 import { createLogger } from "../observability/logger.js";
 import { UnifiedInferenceClient } from "../inference/inference-client.js";
 import { completeTask, failTask } from "./task-graph.js";
+import { claimAssignedTask } from "../state/database.js";
 import type { TaskNode, TaskResult } from "./task-graph.js";
 import type { Database } from "better-sqlite3";
 import type { ConwayClient } from "../types.js";
@@ -86,7 +87,7 @@ interface WorkerTool {
 export class LocalWorkerPool {
   private activeWorkers = new Map<string, { promise: Promise<void>; taskId: string; abortController: AbortController }>();
 
-  constructor(private readonly config: LocalWorkerConfig) {}
+  constructor(private readonly config: LocalWorkerConfig) { }
 
   /**
    * Spawn a local worker for a task. Returns immediately — the worker
@@ -150,6 +151,18 @@ export class LocalWorkerPool {
     const artifacts: string[] = [];
     let finalOutput = "";
     const startedAt = Date.now();
+
+    // ─── Atomic Claim: assigned → running ────────────────────────
+    // The orchestrator sets status='assigned' but the worker must
+    // transition to 'running' (setting started_at) so the task is
+    // visible as in-progress. Without this, assigned tasks stay
+    // permanently stuck on restart (dispatch deadlock).
+    const workerAddress = `local://${workerId}`;
+    const claimed = claimAssignedTask(this.config.db, task.id, workerAddress);
+    if (!claimed) {
+      logger.warn(`[WORKER ${workerId}] Could not claim task ${task.id} — already claimed or status changed, skipping`);
+      return;
+    }
 
     logger.info(`[WORKER ${workerId}] Starting task "${task.title}" (${task.id}), role: ${task.agentRole ?? "generalist"}`);
 
