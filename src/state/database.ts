@@ -45,6 +45,7 @@ import {
   MIGRATION_V9,
   MIGRATION_V9_ALTER_CHILDREN_ROLE,
   MIGRATION_V10,
+  MIGRATION_V11,
 } from "./schema.js";
 import type {
   RiskLevel,
@@ -616,6 +617,10 @@ function applyMigrations(db: DatabaseType): void {
     {
       version: 10,
       apply: () => db.exec(MIGRATION_V10),
+    },
+    {
+      version: 11,
+      apply: () => db.exec(MIGRATION_V11),
     },
   ];
 
@@ -2013,46 +2018,58 @@ export function relationshipDelete(db: DatabaseType, entityAddress: string): voi
 // ─── Phase 2.2: Memory Deserializers ─────────────────────────────
 
 function deserializeWorkingMemoryRow(row: any): WorkingMemoryEntry {
-  return { id: row.id, sessionId: row.session_id, content: row.content, contentType: row.content_type,
+  return {
+    id: row.id, sessionId: row.session_id, content: row.content, contentType: row.content_type,
     priority: row.priority, tokenCount: row.token_count, expiresAt: row.expires_at ?? null,
-    sourceTurn: row.source_turn ?? null, createdAt: row.created_at };
+    sourceTurn: row.source_turn ?? null, createdAt: row.created_at
+  };
 }
 
 function deserializeEpisodicRow(row: any): EpisodicMemoryEntry {
-  return { id: row.id, sessionId: row.session_id, eventType: row.event_type, summary: row.summary,
+  return {
+    id: row.id, sessionId: row.session_id, eventType: row.event_type, summary: row.summary,
     detail: row.detail ?? null, outcome: row.outcome ?? null, importance: row.importance,
     embeddingKey: row.embedding_key ?? null, tokenCount: row.token_count,
     accessedCount: row.accessed_count, lastAccessedAt: row.last_accessed_at ?? null,
-    classification: row.classification, createdAt: row.created_at };
+    classification: row.classification, createdAt: row.created_at
+  };
 }
 
 function deserializeSessionSummaryRow(row: any): SessionSummaryEntry {
-  return { id: row.id, sessionId: row.session_id, summary: row.summary,
+  return {
+    id: row.id, sessionId: row.session_id, summary: row.summary,
     keyDecisions: safeJsonParse(row.key_decisions || "[]", [] as string[], "sessionSummary.keyDecisions"),
     toolsUsed: safeJsonParse(row.tools_used || "[]", [] as string[], "sessionSummary.toolsUsed"),
     outcomes: safeJsonParse(row.outcomes || "[]", [] as string[], "sessionSummary.outcomes"),
     turnCount: row.turn_count, totalTokens: row.total_tokens, totalCostCents: row.total_cost_cents,
-    createdAt: row.created_at };
+    createdAt: row.created_at
+  };
 }
 
 function deserializeSemanticRow(row: any): SemanticMemoryEntry {
-  return { id: row.id, category: row.category, key: row.key, value: row.value,
+  return {
+    id: row.id, category: row.category, key: row.key, value: row.value,
     confidence: row.confidence, source: row.source, embeddingKey: row.embedding_key ?? null,
-    lastVerifiedAt: row.last_verified_at ?? null, createdAt: row.created_at, updatedAt: row.updated_at };
+    lastVerifiedAt: row.last_verified_at ?? null, createdAt: row.created_at, updatedAt: row.updated_at
+  };
 }
 
 function deserializeProceduralRow(row: any): ProceduralMemoryEntry {
-  return { id: row.id, name: row.name, description: row.description,
+  return {
+    id: row.id, name: row.name, description: row.description,
     steps: safeJsonParse(row.steps || "[]", [], "procedural.steps"),
     successCount: row.success_count, failureCount: row.failure_count,
-    lastUsedAt: row.last_used_at ?? null, createdAt: row.created_at, updatedAt: row.updated_at };
+    lastUsedAt: row.last_used_at ?? null, createdAt: row.created_at, updatedAt: row.updated_at
+  };
 }
 
 function deserializeRelationshipRow(row: any): RelationshipMemoryEntry {
-  return { id: row.id, entityAddress: row.entity_address, entityName: row.entity_name ?? null,
+  return {
+    id: row.id, entityAddress: row.entity_address, entityName: row.entity_name ?? null,
     relationshipType: row.relationship_type, trustScore: row.trust_score,
     interactionCount: row.interaction_count, lastInteractionAt: row.last_interaction_at ?? null,
-    notes: row.notes ?? null, createdAt: row.created_at, updatedAt: row.updated_at };
+    notes: row.notes ?? null, createdAt: row.created_at, updatedAt: row.updated_at
+  };
 }
 
 // ─── Phase 2.3: Inference Cost Helpers ──────────────────────────

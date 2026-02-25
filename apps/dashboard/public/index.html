@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,8 +8,11 @@
   <title>Automaton Dashboard</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
 </head>
+
 <body>
   <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -17,26 +21,44 @@
     </div>
     <ul class="nav-list">
       <li><a href="#status" class="nav-link active" data-section="status">
-        <span class="nav-icon">⚡</span> Status
-      </a></li>
+          <span class="nav-icon">⚡</span> Status
+        </a></li>
       <li><a href="#children" class="nav-link" data-section="children">
-        <span class="nav-icon">🧬</span> Children
-      </a></li>
+          <span class="nav-icon">🧬</span> Children
+        </a></li>
       <li><a href="#activity" class="nav-link" data-section="activity">
-        <span class="nav-icon">📊</span> Activity
-      </a></li>
+          <span class="nav-icon">📊</span> Activity
+        </a></li>
       <li><a href="#heartbeat" class="nav-link" data-section="heartbeat">
-        <span class="nav-icon">💓</span> Heartbeat
-      </a></li>
+          <span class="nav-icon">💓</span> Heartbeat
+        </a></li>
       <li><a href="#ledger" class="nav-link" data-section="ledger">
-        <span class="nav-icon">💰</span> Ledger
-      </a></li>
+          <span class="nav-icon">💰</span> Ledger
+        </a></li>
       <li><a href="#soul" class="nav-link" data-section="soul">
-        <span class="nav-icon">🔮</span> Soul
-      </a></li>
+          <span class="nav-icon">🔮</span> Soul
+        </a></li>
       <li><a href="#config" class="nav-link" data-section="config">
-        <span class="nav-icon">⚙️</span> Config
-      </a></li>
+          <span class="nav-icon">⚙️</span> Config
+        </a></li>
+      <li
+        style="margin-top:20px; padding-left:14px; color:var(--text-muted); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:1px">
+        Observability V2</li>
+      <li><a href="#economy" class="nav-link" data-section="economy">
+          <span class="nav-icon">💵</span> Economy & Finance
+        </a></li>
+      <li><a href="#orchestration" class="nav-link" data-section="orchestration">
+          <span class="nav-icon">🎯</span> Orchestration & Goals
+        </a></li>
+      <li><a href="#memory" class="nav-link" data-section="memory">
+          <span class="nav-icon">🧠</span> Memory & State
+        </a></li>
+      <li><a href="#replication" class="nav-link" data-section="replication">
+          <span class="nav-icon">🧬</span> Replication & Social
+        </a></li>
+      <li><a href="#operations" class="nav-link" data-section="operations">
+          <span class="nav-icon">🛠️</span> Operations & Risk
+        </a></li>
     </ul>
     <div class="sidebar-footer">
       <div class="connection-badge" id="connBadge">
@@ -59,4 +81,5 @@
 
   <script src="/app.js"></script>
 </body>
+
 </html>

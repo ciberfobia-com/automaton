@@ -36,6 +36,13 @@ app.use("/api", require("./routes/soul"));
 app.use("/api", require("./routes/config-route"));
 app.use("/api", require("./routes/mutations"));
 
+// ─── API V2 Routes ──────────────────────────────────────────
+app.use("/api/v2/economy", require("./routes/v2/economy"));
+app.use("/api/v2/orchestration", require("./routes/v2/orchestration"));
+app.use("/api/v2/memory", require("./routes/v2/memory"));
+app.use("/api/v2/operations", require("./routes/v2/operations"));
+app.use("/api/v2/replication", require("./routes/v2/replication"));
+
 // ─── SPA Fallback ───────────────────────────────────────────
 app.get("*", (_req, res) => {
     res.sendFile(path.join(__dirname, "public", "index.html"));

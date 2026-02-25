@@ -5,7 +5,7 @@
  * The database IS the automaton's memory.
  */
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 export const CREATE_TABLES = `
   -- Schema version tracking
@@ -670,4 +670,14 @@ export const MIGRATION_V10 = `
 
   CREATE INDEX idx_knowledge_category ON knowledge_store(category);
   CREATE INDEX idx_knowledge_key ON knowledge_store(key);
+`;
+
+export const MIGRATION_V11 = `
+  -- Schema version: 11
+  -- Dashboard Observability Indices
+
+  CREATE INDEX IF NOT EXISTS idx_task_graph_cost ON task_graph(goal_id, actual_cost_cents);
+  CREATE INDEX IF NOT EXISTS idx_inference_model_time ON inference_costs(model, created_at);
+  CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON tool_calls(created_at);
+  CREATE INDEX IF NOT EXISTS idx_policy_decisions_created ON policy_decisions(created_at);
 `;

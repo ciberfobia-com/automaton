@@ -659,6 +659,115 @@
             html += `<div style="margin-top:20px">${jsonBlock(data, "config-full")}</div>`;
             return html;
         },
+
+        // ── V2 Economy ──
+        async economy() {
+            const data = await api("/v2/economy/overview");
+            const models = await api("/v2/economy/inference/models");
+            if (!data) return `<div class="empty">Unable to load economy</div>`;
+
+            let html = `<div class="section-header"><span class="section-title">Economy Overview</span></div>`;
+            html += `<div class="card-grid">
+              <div class="card"><div class="card-label">Credits</div><div class="card-value">${data.credits ? esc(data.credits.value) : "—"}</div></div>
+              <div class="card"><div class="card-label">USDC</div><div class="card-value">${data.usdc ? esc(data.usdc.value) : "—"}</div></div>
+              <div class="card"><div class="card-label">Lifetime Spend</div><div class="card-value" style="color:var(--red)">${formatCents(data.lifetimeSpend)}</div></div>
+              <div class="card"><div class="card-label">Lifetime Revenue</div><div class="card-value" style="color:var(--green)">${formatCents(data.lifetimeRevenue)}</div></div>
+            </div>`;
+
+            if (models && models.length > 0) {
+                html += `<div class="section-header" style="margin-top:24px"><span class="section-title">Model Usage</span></div>`;
+                html += makeTable([
+                    { label: "Model", key: "model" },
+                    { label: "Provider", key: "provider" },
+                    { label: "Tier", key: "tier" },
+                    { label: "Total Cost", key: "total_cost", render: (r) => formatCents(r.total_cost) },
+                    { label: "Input Tokens", key: "total_input", render: (r) => (r.total_input || 0).toLocaleString() },
+                    { label: "Output Tokens", key: "total_output", render: (r) => (r.total_output || 0).toLocaleString() },
+                    { label: "Calls", key: "call_count" },
+                ], models);
+            }
+            return html;
+        },
+
+        // ── V2 Orchestration ──
+        async orchestration() {
+            const goals = await api("/v2/orchestration/goals");
+            let html = `<div class="section-header"><span class="section-title">Goals & Missions</span></div>`;
+            html += makeTable([
+                { label: "ID", key: "id", render: (r) => esc(r.id.slice(0, 8)) + "…" },
+                { label: "Title", key: "title" },
+                { label: "Status", key: "status", render: (r) => statusBadge(r.status) },
+                { label: "Total Cost", key: "total_cost_cents", render: (r) => formatCents(r.total_cost_cents) },
+                { label: "Tasks", key: "task_count", render: (r) => `${r.completed_tasks}/${r.task_count}` },
+                { label: "Created", key: "created_at", render: (r) => timeAgo(r.created_at) },
+            ], goals || []);
+            return html;
+        },
+
+        // ── V2 Memory ──
+        async memory() {
+            const wm = await api("/v2/memory/working");
+            const em = await api("/v2/memory/episodic?limit=30");
+            let html = `<div class="section-header"><span class="section-title">Working Memory (Queue)</span></div>`;
+            html += makeTable([
+                { label: "Priority", key: "priority", render: (r) => r.priority.toFixed(2) },
+                { label: "Type", key: "content_type", render: (r) => badge(r.content_type, "blue") },
+                { label: "Content", key: "content", render: (r) => esc((r.content || "").slice(0, 80)) },
+                { label: "Tokens", key: "token_count" },
+                { label: "Age", key: "created_at", render: (r) => timeAgo(r.created_at) },
+            ], wm || []);
+
+            html += `<div class="section-header" style="margin-top:24px"><span class="section-title">Episodic Memory</span></div>`;
+            html += makeTable([
+                { label: "Type", key: "event_type", render: (r) => badge(r.event_type, "yellow") },
+                { label: "Summary", key: "summary", render: (r) => esc((r.summary || "").slice(0, 80)) },
+                { label: "Outcome", key: "outcome", render: (r) => statusBadge(r.outcome || "neutral") },
+                { label: "Importance", key: "importance", render: (r) => r.importance.toFixed(2) },
+                { label: "Age", key: "created_at", render: (r) => timeAgo(r.created_at) },
+            ], em || []);
+            return html;
+        },
+
+        // ── V2 Operations ──
+        async operations() {
+            const turns = await api("/v2/operations/turns?limit=30");
+            const policy = await api("/v2/operations/policy?limit=30");
+
+            let html = `<div class="section-header"><span class="section-title">Reasoning Engine (Turns)</span></div>`;
+            html += makeTable([
+                { label: "ID", key: "id", render: (r) => esc(r.id.slice(0, 8)) + "…" },
+                { label: "State", key: "state", render: (r) => stateBadge(r.state) },
+                { label: "Thinking", key: "thinking", render: (r) => esc((r.thinking || "").slice(0, 80)) + "…" },
+                { label: "Cost", key: "cost_cents", render: (r) => formatCents(r.cost_cents) },
+                { label: "Age", key: "timestamp", render: (r) => timeAgo(r.timestamp) },
+                { label: "Detail", key: "_json", render: (r) => jsonBlock(r, "op-turn-" + Math.random()) },
+            ], turns || []);
+
+            html += `<div class="section-header" style="margin-top:24px"><span class="section-title">Policy Log</span></div>`;
+            html += makeTable([
+                { label: "Tool", key: "tool_name", render: (r) => badge(r.tool_name, "blue") },
+                { label: "Decision", key: "decision", render: (r) => statusBadge(r.decision) },
+                { label: "Risk", key: "risk_level", render: (r) => badge(r.risk_level, r.risk_level === "safe" ? "green" : "red") },
+                { label: "Reason", key: "reason", render: (r) => esc((r.reason || "").slice(0, 80)) },
+                { label: "Age", key: "created_at", render: (r) => timeAgo(r.created_at) },
+            ], policy || []);
+            return html;
+        },
+
+        // ── V2 Replication ──
+        async replication() {
+            const children = await api("/v2/replication/children");
+            let html = `<div class="section-header"><span class="section-title">Replication Fleet</span></div>`;
+            html += makeTable([
+                { label: "ID", key: "id", render: (r) => `<a href="#child/${r.id}" style="color:var(--accent)">${esc(r.id.slice(0, 8))}…</a>` },
+                { label: "Name", key: "name" },
+                { label: "Status", key: "status", render: (r) => statusBadge(r.status) },
+                { label: "Wallet", key: "address", render: (r) => esc((r.address || "").slice(0, 10)) },
+                { label: "Funded", key: "funded_amount_cents", render: (r) => formatCents(r.funded_amount_cents) },
+                { label: "Age", key: "created_at", render: (r) => timeAgo(r.created_at) },
+            ], children || []);
+            return html;
+        }
     };
 
     // ─── Child Tab Renderers ────────────────────────────
@@ -983,6 +1092,11 @@
             ledger: "Ledger",
             soul: "Soul",
             config: "Config",
+            economy: "Economy & Finance",
+            orchestration: "Orchestration & Goals",
+            memory: "Memory & State",
+            replication: "Replication & Children",
+            operations: "Operations & Risk",
         };
         $("#pageTitle").textContent = titles[section] || section;
 

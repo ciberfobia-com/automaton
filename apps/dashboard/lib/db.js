@@ -21,7 +21,7 @@ function open() {
 
     try {
         db = new Database(dbPath, { readonly: true, fileMustExist: true });
-        db.pragma("journal_mode = WAL");
+        db.pragma("query_only = true");
         console.log(`[dashboard] Opened database: ${dbPath}`);
         return db;
     } catch (err) {
