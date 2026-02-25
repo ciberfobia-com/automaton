@@ -621,7 +621,7 @@ export class Orchestrator {
     if (progress.total === 0) {
       const maxReplans = this.getMaxReplans();
       if (state.replanCount >= maxReplans) {
-        logger.error("Executing phase has 0 tasks and max replans exhausted — marking goal failed", {
+        logger.error("Executing phase has 0 tasks and max replans exhausted — marking goal failed", undefined, {
           goalId: goal.id,
           replanCount: state.replanCount,
         });
