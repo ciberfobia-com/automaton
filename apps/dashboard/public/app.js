@@ -103,6 +103,41 @@
         return html;
     }
 
+    // ─── Admin Mutators ───────────────────────────────────────
+
+    window.__adminUnassign = async (taskId) => {
+        if (!confirm(`Are you sure you want to unassign task ${taskId}? It will return to the orchestrator queue.`)) return;
+        try {
+            const res = await fetch("/api/v2/admin/unassign_task", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ taskId })
+            });
+            const data = await res.json();
+            if (data.error) alert(`Error: ${data.error}`);
+            else navigate();
+        } catch (e) {
+            alert("Failed to reach admin API");
+        }
+    };
+
+    window.__adminFail = async (taskId) => {
+        const reason = prompt(`Reason for marking task ${taskId} as failed:`, "Admin override");
+        if (!reason) return;
+        try {
+            const res = await fetch("/api/v2/admin/mark_task_failed", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ taskId, reason })
+            });
+            const data = await res.json();
+            if (data.error) alert(`Error: ${data.error}`);
+            else navigate();
+        } catch (e) {
+            alert("Failed to reach admin API");
+        }
+    };
+
     // ─── Sections ───────────────────────────────────────
 
     const sections = {
@@ -1097,6 +1132,10 @@
             memory: "Memory & State",
             replication: "Replication & Children",
             operations: "Operations & Risk",
+            telemetry_workers: "Worker Telemetry",
+            telemetry_loop: "Loop Inspector",
+            telemetry_diagnostics: "Diagnostics",
+            telemetry_db: "Database Inspector",
         };
         $("#pageTitle").textContent = titles[section] || section;
 
@@ -1144,6 +1183,17 @@
     }
 
     // ─── Init ───────────────────────────────────────────
+
+    window.__dbSetOffset = (offset) => {
+        window.__dbOffset = offset;
+        navigate();
+    };
+
+    window.__switchDbTable = (table) => {
+        window.__dbTable = table;
+        window.__dbOffset = 0;
+        navigate();
+    };
 
     window.addEventListener("hashchange", navigate);
     checkHealth();

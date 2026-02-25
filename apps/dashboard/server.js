@@ -43,6 +43,9 @@ app.use("/api/v2/memory", require("./routes/v2/memory"));
 app.use("/api/v2/operations", require("./routes/v2/operations"));
 app.use("/api/v2/replication", require("./routes/v2/replication"));
 
+app.use("/api/v2/telemetry", require("./routes/v2/telemetry"));
+app.use("/api/v2/admin", require("./routes/v2/admin_actions"));
+
 // ─── SPA Fallback ───────────────────────────────────────────
 app.get("*", (_req, res) => {
     res.sendFile(path.join(__dirname, "public", "index.html"));
