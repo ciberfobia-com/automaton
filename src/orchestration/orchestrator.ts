@@ -98,7 +98,7 @@ export class Orchestrator {
     inference: UnifiedInferenceClient;
     identity: AutomatonIdentity;
     config: any;
-  }) {}
+  }) { }
 
   async tick(): Promise<OrchestratorTickResult> {
     const counters: TickCounters = {
@@ -614,6 +614,36 @@ export class Orchestrator {
 
     const progress = getGoalProgress(this.params.db, goal.id);
 
+    // ─── INVARIANT: executing with 0 tasks means planning was skipped ───
+    // This can happen if the state was manually patched, or if a crash
+    // occurred between goal creation and task decomposition. Fall back to
+    // planning so the goal gets decomposed into executable tasks.
+    if (progress.total === 0) {
+      const maxReplans = this.getMaxReplans();
+      if (state.replanCount >= maxReplans) {
+        logger.error("Executing phase has 0 tasks and max replans exhausted — marking goal failed", {
+          goalId: goal.id,
+          replanCount: state.replanCount,
+        });
+        updateGoalStatus(this.params.db, goal.id, "failed");
+        return {
+          ...state,
+          phase: "failed",
+          failedError: "No tasks generated after multiple planning attempts",
+        };
+      }
+
+      logger.warn("Executing phase has 0 tasks for goal — falling back to planning", {
+        goalId: goal.id,
+        replanCount: state.replanCount,
+      });
+      return {
+        ...state,
+        phase: "planning",
+        replanCount: state.replanCount + 1,
+      };
+    }
+
     if (progress.total > 0 && progress.completed === progress.total) {
       updateGoalStatus(this.params.db, goal.id, "completed");
       return {
@@ -943,13 +973,30 @@ export class Orchestrator {
     }
 
     const phase = asPhase(parsed.phase);
-    return {
+    const state: OrchestratorState = {
       phase: phase ?? DEFAULT_STATE.phase,
       goalId: typeof parsed.goalId === "string" ? parsed.goalId : null,
       replanCount: typeof parsed.replanCount === "number" ? Math.max(0, Math.floor(parsed.replanCount)) : 0,
       failedTaskId: typeof parsed.failedTaskId === "string" ? parsed.failedTaskId : null,
       failedError: typeof parsed.failedError === "string" ? parsed.failedError : null,
     };
+
+    // ─── Startup reconciliation ──────────────────────────────────
+    // If goalId points to a non-active goal (failed, completed, or
+    // deleted), reset to idle so the orchestrator picks up fresh goals.
+    if (state.goalId && state.phase !== "idle") {
+      const goal = getGoalById(this.params.db, state.goalId);
+      if (!goal || goal.status !== "active") {
+        logger.warn("Stale goalId in orchestrator state — resetting to idle", {
+          goalId: state.goalId,
+          goalStatus: goal?.status ?? "not found",
+          phase: state.phase,
+        });
+        return { ...DEFAULT_STATE };
+      }
+    }
+
+    return state;
   }
 
   private saveState(state: OrchestratorState): void {
