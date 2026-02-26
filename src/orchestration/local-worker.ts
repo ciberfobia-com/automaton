@@ -170,20 +170,27 @@ export class LocalWorkerPool {
     let finalOutput = "";
     const startedAt = Date.now();
 
+    // ─── EARLY LOG: write to DB BEFORE anything else ────────────
+    // This ensures dashboard visibility even if the process dies
+    // during claimAssignedTask or the first inference call.
+    const workerAddress = `local://${workerId}`;
+    this.workerLog(workerId, task, `SPAWNED — about to claim task "${task.title}" (role: ${task.agentRole ?? "generalist"})`);
+    logger.info(`[WORKER ${workerId}] Spawned for task "${task.title}" (${task.id})`);
+
     // ─── Atomic Claim: assigned → running ────────────────────────
     // The orchestrator sets status='assigned' but the worker must
     // transition to 'running' (setting started_at) so the task is
     // visible as in-progress. Without this, assigned tasks stay
     // permanently stuck on restart (dispatch deadlock).
-    const workerAddress = `local://${workerId}`;
     const claimed = claimAssignedTask(this.config.db, task.id, workerAddress);
     if (!claimed) {
       logger.warn(`[WORKER ${workerId}] Could not claim task ${task.id} — already claimed or status changed, skipping`);
+      this.workerLog(workerId, task, `CLAIM FAILED — task already claimed or status changed`);
       return;
     }
 
-    logger.info(`[WORKER ${workerId}] Starting task "${task.title}" (${task.id}), role: ${task.agentRole ?? "generalist"}`);
-    this.workerLog(workerId, task, `STARTED task "${task.title}" (role: ${task.agentRole ?? "generalist"})`);
+    this.workerLog(workerId, task, `CLAIMED — starting inference loop (maxTurns=${maxTurns})`);
+    logger.info(`[WORKER ${workerId}] Claimed task "${task.title}" (${task.id}), role: ${task.agentRole ?? "generalist"}`);
 
     for (let turn = 0; turn < maxTurns; turn++) {
       if (signal.aborted) {

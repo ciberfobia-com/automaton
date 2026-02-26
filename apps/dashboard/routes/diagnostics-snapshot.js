@@ -383,11 +383,18 @@ router.get("/diagnostics/snapshot", (_req, res) => {
         c.status === "running" &&
         !tasks.some(t => t.assigned_to === c.address || t.assigned_to === `local://${c.sandbox_id}`)
     );
+    // Stale local tasks: assigned/running to local:// but worker is dead or missing
+    const staleLocalTasks = tasks.filter(t =>
+        (t.status === "assigned" || t.status === "running") &&
+        t.assigned_to && t.assigned_to.startsWith("local://") &&
+        !children.some(c => c.address === t.assigned_to && c.status === "running")
+    );
 
     lines.push(`Dispatch deadlocks: ${deadlocks.length}`);
     lines.push(`Stalled/zombie workers: ${stalledWorkers.length}`);
     lines.push(`Ghost workers (running, no tasks): ${ghostWorkers.length}`);
     lines.push(`Stale recovery tasks: ${staleCounts.length}`);
+    lines.push(`Orphaned local tasks (worker dead): ${staleLocalTasks.length}`);
 
     if (deadlocks.length > 0) {
         for (const d of deadlocks) {
@@ -395,10 +402,30 @@ router.get("/diagnostics/snapshot", (_req, res) => {
         }
     }
 
+    if (stalledWorkers.length > 0) {
+        for (const w of stalledWorkers) {
+            const workerTasks = tasks.filter(t => t.assigned_to === w.address);
+            const silence = w.last_checked ? Math.floor((now - new Date(w.last_checked).getTime()) / 60000) : 999;
+            lines.push(`  ZOMBIE: ${w.name || w.id.slice(0, 8)} silence=${silence}m tasks=${workerTasks.length}`);
+            lines.push(`    Likely cause: process restart killed in-memory worker, task stuck`);
+            for (const t of workerTasks) {
+                lines.push(`    → task="${(t.title || "").slice(0, 50)}" status=${t.status}`);
+            }
+        }
+    }
+
     if (ghostWorkers.length > 0) {
         for (const g of ghostWorkers) {
             lines.push(`  GHOST: ${g.name || g.id.slice(0, 8)} status=${g.status} address=${g.address}`);
         }
+    }
+
+    if (staleLocalTasks.length > 0) {
+        lines.push(`  ⚠ RECOVERY NEEDED: ${staleLocalTasks.length} task(s) assigned to dead local workers:`);
+        for (const t of staleLocalTasks) {
+            lines.push(`    → task="${(t.title || "").slice(0, 50)}" worker=${t.assigned_to} status=${t.status}`);
+        }
+        lines.push(`    These will be auto-recovered on next orchestrator restart.`);
     }
 
     lines.push("");

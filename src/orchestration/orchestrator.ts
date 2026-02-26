@@ -89,6 +89,7 @@ const DEFAULT_STATE: OrchestratorState = {
 
 export class Orchestrator {
   private pendingTaskResults: TaskResultEnvelope[] = [];
+  private _localRecoveryDone = false;
 
   constructor(private readonly params: {
     db: Database;
@@ -133,6 +134,35 @@ export class Orchestrator {
              AND status IN ('assigned', 'running')
          )`,
     ).run(new Date().toISOString());
+
+    // ─── One-time startup recovery: reset stale local worker tasks ─────
+    // Local workers are in-memory async tasks that DIE when the process
+    // restarts. Any task still 'assigned' or 'running' under a local://
+    // worker is stuck forever — reset to 'pending' so it can be reassigned.
+    // This ONLY runs on the first tick after startup (not every tick,
+    // to avoid the #233 infinite assign-reset loop).
+    if (!this._localRecoveryDone) {
+      this._localRecoveryDone = true;
+      const staleLocalTasks = this.params.db.prepare(
+        `SELECT id, title, assigned_to FROM task_graph
+         WHERE status IN ('assigned', 'running')
+           AND assigned_to LIKE 'local://%'
+           AND goal_id IN (SELECT id FROM goals WHERE status = 'active')`,
+      ).all() as Array<{ id: string; title: string; assigned_to: string }>;
+
+      if (staleLocalTasks.length > 0) {
+        logger.warn("Startup recovery: resetting stale local worker tasks", {
+          count: staleLocalTasks.length,
+          tasks: staleLocalTasks.map((t) => ({ id: t.id, title: t.title?.slice(0, 50), worker: t.assigned_to })),
+        });
+        this.params.db.prepare(
+          `UPDATE task_graph SET status = 'pending', assigned_to = NULL, started_at = NULL
+           WHERE status IN ('assigned', 'running')
+             AND assigned_to LIKE 'local://%'
+             AND goal_id IN (SELECT id FROM goals WHERE status = 'active')`,
+        ).run();
+      }
+    }
 
     try {
       switch (state.phase) {
