@@ -238,7 +238,23 @@ export async function runAgentLoop(
         config: {
           ...config,
           spawnAgent: async (task: any) => {
-            // Try Conway sandbox spawn first (production)
+            // Try local worker FIRST — free (uses padre's inference client)
+            try {
+              const spawned = workerPool.spawn(task);
+              logger.info("Spawned local worker", {
+                taskId: task.id,
+                address: spawned.address,
+                name: spawned.name,
+              });
+              return spawned;
+            } catch (localError) {
+              logger.warn("Failed to spawn local worker, trying Conway sandbox", {
+                taskId: task.id,
+                error: localError instanceof Error ? localError.message : String(localError),
+              });
+            }
+
+            // Fallback: Conway sandbox (costs credits — creates a VM)
             try {
               const { generateGenesisConfig } = await import("../replication/genesis.js");
               const { spawnChild } = await import("../replication/spawn.js");
@@ -259,22 +275,11 @@ export async function runAgentLoop(
                 sandboxId: child.sandboxId,
               };
             } catch (sandboxError) {
-              // Conway sandbox unavailable — fall back to local worker
-              logger.info("Conway sandbox unavailable, spawning local worker", {
+              logger.warn("Conway sandbox spawn also failed", {
                 taskId: task.id,
                 error: sandboxError instanceof Error ? sandboxError.message : String(sandboxError),
               });
-
-              try {
-                const spawned = workerPool.spawn(task);
-                return spawned;
-              } catch (localError) {
-                logger.warn("Failed to spawn local worker", {
-                  taskId: task.id,
-                  error: localError instanceof Error ? localError.message : String(localError),
-                });
-                return null;
-              }
+              return null;
             }
           },
         },

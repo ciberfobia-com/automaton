@@ -187,22 +187,76 @@ router.get("/diagnostics/snapshot", (_req, res) => {
         }
     }
 
-    // ── Economy (within window) ────────────────
-    sep("ECONOMY (last " + minutes + "m)");
+    // ── Economy ─────────────────────────────────
+    sep("ECONOMY");
+    const balCents = balanceRaw?.creditsCents || 0;
+    const usdcBal = kv("usdc_balance") || "—";
+    lines.push(`  Credits:  ${fmtCents(balCents)} (${balCents} cents)`);
+    lines.push(`  USDC:     ${usdcBal}`);
+    lines.push(`  Combined: ~${fmtCents(balCents)} credits + ${usdcBal} on-chain`);
+    lines.push("");
+
+    // Inference costs table
     const burnWindow = safeGet(`
         SELECT SUM(cost_cents) as cost, COUNT(*) as calls
         FROM inference_costs WHERE created_at > ?
     `, [cutoff]);
     const burn1h = safeGet(`
-        SELECT SUM(cost_cents) as cost FROM inference_costs WHERE created_at > ?
+        SELECT SUM(cost_cents) as cost, COUNT(*) as calls
+        FROM inference_costs WHERE created_at > ?
     `, [isoCutoff(60)]);
-    lines.push(`Inference cost (${minutes}m): ${fmtCents(burnWindow?.cost)} over ${burnWindow?.calls || 0} calls`);
-    lines.push(`Inference cost (1h): ${fmtCents(burn1h?.cost)}`);
+    const burn24h = safeGet(`
+        SELECT SUM(cost_cents) as cost, COUNT(*) as calls
+        FROM inference_costs WHERE created_at > ?
+    `, [isoCutoff(24 * 60)]);
+    const burnAllTime = safeGet(`
+        SELECT SUM(cost_cents) as cost, COUNT(*) as calls FROM inference_costs
+    `);
+
+    lines.push(`  Inference Costs:`);
+    lines.push(`    Last ${minutes}m:  ${fmtCents(burnWindow?.cost)} (${burnWindow?.calls || 0} calls)`);
+    lines.push(`    Last 1h:     ${fmtCents(burn1h?.cost)} (${burn1h?.calls || 0} calls)`);
+    lines.push(`    Last 24h:    ${fmtCents(burn24h?.cost)} (${burn24h?.calls || 0} calls)`);
+    lines.push(`    All time:    ${fmtCents(burnAllTime?.cost)} (${burnAllTime?.calls || 0} calls)`);
 
     const burnPerMin = (burnWindow?.cost || 0) / minutes;
-    const balCents = balanceRaw?.creditsCents || 0;
     const ttl = burnPerMin > 0 ? Math.floor(balCents / burnPerMin) : -1;
-    lines.push(`Burn rate: ${fmtCents(burnPerMin)}/min | Time to zero: ${ttl < 0 ? "∞" : ttl + "m"}`);
+    lines.push(`    Rate: ${fmtCents(burnPerMin)}/min → TTZ: ${ttl < 0 ? "∞" : ttl + "m"}`);
+    lines.push("");
+
+    // Turn costs in window
+    const turnCosts = safeGet(`
+        SELECT SUM(cost_cents) as cost, COUNT(*) as cnt
+        FROM turns WHERE timestamp > ?
+    `, [cutoff]);
+    lines.push(`  Turn costs (${minutes}m): ${fmtCents(turnCosts?.cost)} over ${turnCosts?.cnt || 0} turns`);
+
+    // Sandbox / child creation costs
+    const sandboxCreations = safeAll(`
+        SELECT description, timestamp FROM modifications
+        WHERE type = 'child_spawn'
+        ORDER BY timestamp DESC LIMIT 5
+    `);
+    if (sandboxCreations.length > 0) {
+        lines.push(``);
+        lines.push(`  Sandbox Spawns (recent):`);
+        for (const s of sandboxCreations) {
+            lines.push(`    ${(s.description || "").slice(0, 80)} ts=${s.timestamp}`);
+        }
+    }
+    // Child funding totals
+    const childFunding = safeAll(`
+        SELECT name, address, status, funded_amount_cents
+        FROM children WHERE funded_amount_cents > 0
+        ORDER BY funded_amount_cents DESC
+    `);
+    if (childFunding.length > 0) {
+        lines.push(``);
+        lines.push(`  Child Funding:`);
+        for (const cf of childFunding) {
+            lines.push(`    ${cf.name}: ${fmtCents(cf.funded_amount_cents)} [${cf.status}]`);
+        }
+    }
 
     // Tool spending
     const toolSpend = safeAll(`
@@ -212,9 +266,10 @@ router.get("/diagnostics/snapshot", (_req, res) => {
         GROUP BY tool_name ORDER BY total DESC LIMIT 10
     `, [cutoff]);
     if (toolSpend.length > 0) {
-        lines.push(`Tool spend (${minutes}m):`);
+        lines.push(``);
+        lines.push(`  Tool Spend (${minutes}m):`);
         for (const ts of toolSpend) {
-            lines.push(`  ${ts.tool_name}: ${fmtCents(ts.total)} (${ts.cnt} calls)`);
+            lines.push(`    ${ts.tool_name}: ${fmtCents(ts.total)} (${ts.cnt} calls)`);
         }
     }
 
@@ -259,22 +314,46 @@ router.get("/diagnostics/snapshot", (_req, res) => {
         }
     }
 
-    // ── Worker Logs ──────────────────────────────
-    sep("WORKER LOGS (last " + minutes + "m)");
+    // ── Worker Activity (per-worker grouped) ─────
+    sep("WORKER ACTIVITY (last " + minutes + "m)");
     const workerLogs = safeAll(`
         SELECT agent_address, task_id, content, created_at
         FROM event_stream
         WHERE type = 'worker_log'
           AND created_at > ?
-        ORDER BY created_at DESC LIMIT 50
+        ORDER BY created_at ASC
     `, [cutoff]);
     if (workerLogs.length === 0) {
-        lines.push("No worker logs in window");
+        lines.push("No worker activity in window");
+        // Show ALL worker logs (no time filter) for context
+        const allLogs = safeAll(`
+            SELECT agent_address, task_id, content, created_at
+            FROM event_stream
+            WHERE type = 'worker_log'
+            ORDER BY created_at DESC LIMIT 20
+        `);
+        if (allLogs.length > 0) {
+            lines.push(`  (showing ${allLogs.length} most recent logs from all time):`);
+            for (const wl of allLogs) {
+                const workerId = (wl.agent_address || "").replace("local://", "").slice(-6);
+                lines.push(`    [${workerId}] ${(wl.content || "").slice(0, 120)} ts=${wl.created_at}`);
+            }
+        }
     } else {
-        lines.push(`Count: ${workerLogs.length}`);
+        // Group by worker
+        const byWorker = {};
         for (const wl of workerLogs) {
-            const workerId = (wl.agent_address || "").replace("local://", "").slice(-6);
-            lines.push(`  [${workerId}] ${(wl.content || "").slice(0, 120)} ts=${wl.created_at}`);
+            const addr = wl.agent_address || "unknown";
+            if (!byWorker[addr]) byWorker[addr] = [];
+            byWorker[addr].push(wl);
+        }
+        lines.push(`Total: ${workerLogs.length} entries from ${Object.keys(byWorker).length} workers`);
+        for (const [addr, logs] of Object.entries(byWorker)) {
+            const workerId = addr.replace("local://", "").slice(-8);
+            lines.push(`  Worker ${workerId}:`);
+            for (const wl of logs) {
+                lines.push(`    ${(wl.content || "").slice(0, 120)} ts=${wl.created_at}`);
+            }
         }
     }
 
