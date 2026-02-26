@@ -243,6 +243,25 @@ router.get("/diagnostics/snapshot", (_req, res) => {
         }
     }
 
+    // ── Worker Logs ──────────────────────────────
+    sep("WORKER LOGS (last " + minutes + "m)");
+    const workerLogs = safeAll(`
+        SELECT agent_address, task_id, content, created_at
+        FROM event_stream
+        WHERE type = 'worker_log'
+          AND created_at > datetime('now', '${cutoff}')
+        ORDER BY created_at DESC LIMIT 50
+    `);
+    if (workerLogs.length === 0) {
+        lines.push("No worker logs in window");
+    } else {
+        lines.push(`Count: ${workerLogs.length}`);
+        for (const wl of workerLogs) {
+            const workerId = (wl.agent_address || "").replace("local://", "").slice(-6);
+            lines.push(`  [${workerId}] ${(wl.content || "").slice(0, 120)} ts=${wl.created_at}`);
+        }
+    }
+
     lines.push("");
     lines.push("── END SNAPSHOT ──");
 

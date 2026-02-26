@@ -52,6 +52,7 @@ const logger = createLogger("orchestration.local-worker");
 
 const MAX_TURNS = 25;
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
+const INFERENCE_TIMEOUT_MS = 60_000; // Per-call timeout for inference API
 
 // Minimal inference interface — works with both UnifiedInferenceClient and
 // an adapter around the main agent's InferenceClient.
@@ -110,9 +111,12 @@ export class LocalWorkerPool {
           workerId,
           taskId: task.id,
         });
+        this.workerLog(workerId, task, `CRASHED: ${error instanceof Error ? error.message : String(error)}`);
         try {
           failTask(this.config.db, task.id, `Worker crashed: ${error instanceof Error ? error.message : String(error)}`, true);
         } catch { /* task may already be in terminal state */ }
+        // Update child status to reflect failure
+        this.updateWorkerChildStatus(address, "failed");
       })
       .finally(() => {
         this.activeWorkers.delete(workerId);
@@ -179,18 +183,23 @@ export class LocalWorkerPool {
     }
 
     logger.info(`[WORKER ${workerId}] Starting task "${task.title}" (${task.id}), role: ${task.agentRole ?? "generalist"}`);
+    this.workerLog(workerId, task, `STARTED task "${task.title}" (role: ${task.agentRole ?? "generalist"})`);
 
     for (let turn = 0; turn < maxTurns; turn++) {
       if (signal.aborted) {
         logger.info(`[WORKER ${workerId}] Aborted on turn ${turn}`);
+        this.workerLog(workerId, task, `ABORTED on turn ${turn}`);
         failTask(this.config.db, task.id, "Worker aborted", false);
+        this.updateWorkerChildStatus(workerAddress, "stopped");
         return;
       }
 
       const timeoutMs = task.metadata.timeoutMs || DEFAULT_TIMEOUT_MS;
       if (Date.now() - startedAt > timeoutMs) {
         logger.warn(`[WORKER ${workerId}] Timed out after ${timeoutMs}ms on turn ${turn}`);
+        this.workerLog(workerId, task, `TIMED OUT after ${timeoutMs}ms on turn ${turn}`);
         failTask(this.config.db, task.id, `Worker timed out after ${timeoutMs}ms`, true);
+        this.updateWorkerChildStatus(workerAddress, "stopped");
         return;
       }
 
@@ -198,7 +207,7 @@ export class LocalWorkerPool {
 
       let response;
       try {
-        response = await this.config.inference.chat({
+        response = await this.chatWithTimeout({
           tier: "fast",
           messages: messages as any,
           tools: toolDefs,
@@ -207,7 +216,9 @@ export class LocalWorkerPool {
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         logger.error(`[WORKER ${workerId}] Inference failed on turn ${turn + 1}`, error instanceof Error ? error : new Error(msg));
+        this.workerLog(workerId, task, `INFERENCE FAILED on turn ${turn + 1}: ${msg}`);
         failTask(this.config.db, task.id, `Inference failed: ${msg}`, true);
+        this.updateWorkerChildStatus(workerAddress, "failed");
         return;
       }
 
@@ -215,6 +226,7 @@ export class LocalWorkerPool {
       if (response.toolCalls && Array.isArray(response.toolCalls) && response.toolCalls.length > 0) {
         const toolNames = (response.toolCalls as any[]).map((tc: any) => tc.function?.name ?? "?").join(", ");
         logger.info(`[WORKER ${workerId}] Turn ${turn + 1} — tool calls: ${toolNames}`);
+        this.workerLog(workerId, task, `Turn ${turn + 1}/${maxTurns} — tools: ${toolNames}`);
 
         // Add assistant message with tool calls
         messages.push({
@@ -261,6 +273,7 @@ export class LocalWorkerPool {
       // No tool calls — the model is done (final response)
       finalOutput = response.content || "Task completed.";
       logger.info(`[WORKER ${workerId}] Done on turn ${turn + 1} — ${finalOutput.slice(0, 200)}`);
+      this.workerLog(workerId, task, `DONE on turn ${turn + 1}: ${finalOutput.slice(0, 300)}`);
       break;
     }
 
@@ -276,19 +289,68 @@ export class LocalWorkerPool {
 
     try {
       completeTask(this.config.db, task.id, result);
+      const turns = messages.filter((m) => m.role === "assistant").length;
       logger.info("Local worker completed task", {
         workerId,
         taskId: task.id,
         title: task.title,
         duration,
-        turns: messages.filter((m) => m.role === "assistant").length,
+        turns,
       });
+      this.workerLog(workerId, task, `COMPLETED in ${turns} turns (${Math.round(duration / 1000)}s)`);
+      this.updateWorkerChildStatus(`local://${workerId}`, "stopped");
     } catch (error) {
       logger.warn("Failed to mark task complete", {
         workerId,
         taskId: task.id,
         error: error instanceof Error ? error.message : String(error),
       });
+      this.updateWorkerChildStatus(`local://${workerId}`, "failed");
+    }
+  }
+
+  /**
+   * Persist a worker log entry to event_stream for dashboard visibility.
+   * Uses type='worker_log' so the diagnostics snapshot can filter for them.
+   */
+  private workerLog(workerId: string, task: TaskNode, message: string): void {
+    try {
+      this.config.db.prepare(
+        `INSERT INTO event_stream (id, type, agent_address, goal_id, task_id, content, token_count, compacted_to, created_at)
+         VALUES (?, 'worker_log', ?, ?, ?, ?, 0, NULL, datetime('now'))`,
+      ).run(ulid(), `local://${workerId}`, task.goalId, task.id, message);
+    } catch {
+      // Never let log persistence crash the worker
+    }
+  }
+
+  /**
+   * Wrap inference.chat() with a timeout to prevent hung API calls from
+   * freezing workers indefinitely.
+   */
+  private async chatWithTimeout(params: Parameters<WorkerInferenceClient["chat"]>[0]): Promise<{ content: string; toolCalls?: unknown[] }> {
+    return new Promise<{ content: string; toolCalls?: unknown[] }>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`Inference call timed out after ${INFERENCE_TIMEOUT_MS}ms`)),
+        INFERENCE_TIMEOUT_MS,
+      );
+      this.config.inference.chat(params)
+        .then(resolve, reject)
+        .finally(() => clearTimeout(timer));
+    });
+  }
+
+  /**
+   * Update the child record status in the DB when a worker finishes.
+   * This ensures the dashboard reflects accurate worker state.
+   */
+  private updateWorkerChildStatus(address: string, status: "stopped" | "failed"): void {
+    try {
+      this.config.db.prepare(
+        `UPDATE children SET status = ?, last_checked = datetime('now') WHERE address = ?`,
+      ).run(status, address);
+    } catch {
+      // Best-effort — don't crash the worker for a status update
     }
   }
 
