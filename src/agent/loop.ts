@@ -281,8 +281,7 @@ export async function runAgentLoop(
       });
     } catch (error) {
       logger.warn(
-        `Orchestrator initialization failed, continuing without orchestration: ${
-          error instanceof Error ? error.message : String(error)
+        `Orchestrator initialization failed, continuing without orchestration: ${error instanceof Error ? error.message : String(error)
         }`,
       );
       planModeController = undefined;
@@ -427,6 +426,7 @@ export async function runAgentLoop(
 
         // Re-evaluate tier after potential topup
         const effectiveTier = getSurvivalTier(financial.creditsCents);
+        db.setKV("survival_tier", effectiveTier);
 
         if (effectiveTier === "critical") {
           log(config, "[CRITICAL] Credits critically low. Limited operation.");
@@ -521,8 +521,7 @@ export async function runAgentLoop(
           messages = injectTodoContext(messages, todoMd);
         } catch (error) {
           logger.warn(
-            `todo.md context injection skipped: ${
-              error instanceof Error ? error.message : String(error)
+            `todo.md context injection skipped: ${error instanceof Error ? error.message : String(error)
             }`,
           );
         }
@@ -916,6 +915,9 @@ async function getFinancialState(
         "last_known_balance",
         JSON.stringify({ creditsCents, usdcBalance }),
       );
+      // Write individual keys the dashboard reads
+      db.setKV("credits_balance", `$${(creditsCents / 100).toFixed(2)}`);
+      db.setKV("usdc_balance", `${usdcBalance.toFixed(2)} USDC`);
     } catch (error) {
       logger.error("Failed to cache balance", error instanceof Error ? error : undefined);
     }

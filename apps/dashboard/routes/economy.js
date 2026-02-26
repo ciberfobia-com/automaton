@@ -7,10 +7,10 @@ const { safeAll, safeGet } = require("../lib/db");
 
 router.get("/economy/overview", (_req, res) => {
     // Current credits from KV
-    const creditsRow = safeGet(`SELECT value FROM kv WHERE key = 'auto_credits'`);
+    const creditsRow = safeGet(`SELECT value FROM kv WHERE key = 'last_known_balance'`);
     let creditsCents = 0;
     if (creditsRow?.value) {
-        try { creditsCents = JSON.parse(creditsRow.value).cents || 0; } catch { }
+        try { creditsCents = JSON.parse(creditsRow.value).creditsCents || 0; } catch { }
     }
 
     // Burn rate: last 10 min, last hour, last 24h

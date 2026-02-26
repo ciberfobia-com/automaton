@@ -517,15 +517,43 @@ export class Orchestrator {
 
     // Recover stale tasks: workers that died (process restart, sandbox crash)
     // leave tasks stuck in 'assigned' forever. Detect and reset them.
+    // Track recovery attempts per task to prevent infinite recover-assign loops.
     if (this.params.isWorkerAlive) {
       const assignedTasks = getTasksByGoal(this.params.db, goal.id)
         .filter((t) => t.status === "assigned" && t.assignedTo);
       for (const task of assignedTasks) {
         const alive = this.params.isWorkerAlive(task.assignedTo!);
         if (!alive) {
+          const staleKey = `orchestrator.stale_count.${task.id}`;
+          const staleRow = this.params.db.prepare(
+            "SELECT value FROM kv WHERE key = ?",
+          ).get(staleKey) as { value: string } | undefined;
+          const staleCount = staleRow ? parseInt(staleRow.value, 10) || 0 : 0;
+          const maxRecoveries = task.maxRetries ?? 3;
+
+          if (staleCount >= maxRecoveries) {
+            logger.error("Task exceeded max stale recoveries, marking failed", undefined, {
+              taskId: task.id,
+              worker: task.assignedTo,
+              staleCount,
+              maxRecoveries,
+            });
+            try {
+              failTask(this.params.db, task.id, `Worker died ${staleCount} times — task abandoned`, false);
+            } catch { /* task may already be in terminal state */ }
+            this.params.db.prepare("DELETE FROM kv WHERE key = ?").run(staleKey);
+            continue;
+          }
+
+          this.params.db.prepare(
+            "INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+          ).run(staleKey, String(staleCount + 1));
+
           logger.warn("Recovering stale task from dead worker", {
             taskId: task.id,
             worker: task.assignedTo,
+            attempt: staleCount + 1,
+            maxRecoveries,
           });
           this.params.db.prepare(
             "UPDATE task_graph SET status = 'pending', assigned_to = NULL, started_at = NULL WHERE id = ?",

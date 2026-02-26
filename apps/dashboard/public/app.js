@@ -157,13 +157,26 @@
         //  OVERVIEW — merged Status + Loop Inspector
         // ══════════════════════════════════════════════════
         async overview() {
-            const [status, health, econ] = await Promise.all([
+            const [status, health, econ, orch] = await Promise.all([
                 api("/status"),
                 api("/health/derived"),
                 api("/economy/overview"),
+                api("/orchestrator/health"),
             ]);
 
             let html = "";
+
+            // Cycle detection banner
+            if (orch?.cycleDetected) {
+                html += `<div class="card" style="border-color:var(--red); margin-bottom:20px; background:rgba(255,59,48,0.08)">
+                    <div class="card-label" style="color:var(--red)">🔄 CYCLE DETECTED — Orchestrator Stuck</div>
+                    <div class="card-sub" style="color:var(--red)">
+                        Tasks are being recovered from dead workers repeatedly without progress.
+                        ${orch.totalStaleRecoveries} total stale recoveries detected.
+                        The system will auto-fail tasks after max retries.
+                    </div>
+                </div>`;
+            }
 
             // System health banner
             if (health?.summary) {
@@ -189,6 +202,29 @@
                     <div class="card"><div class="card-label">Total Turns</div><div class="card-value">${esc(status.turnCount)}</div></div>
                     <div class="card"><div class="card-label">DB</div><div class="card-value">${status.dbConnected ? badge("Connected", "green") : badge("Disconnected", "red")}</div></div>
                 </div>`;
+            }
+
+            // Orchestrator status
+            if (orch) {
+                html += `<div class="section-header" style="margin-top:24px"><span class="section-title">Orchestrator</span></div>`;
+                const phaseColor = orch.phase === "executing" ? "green" : orch.phase === "failed" ? "red" : orch.phase === "idle" ? "blue" : "yellow";
+                html += `<div class="card-grid">
+                    <div class="card"><div class="card-label">Phase</div><div class="card-value">${badge(orch.phase, phaseColor)}</div></div>
+                    <div class="card"><div class="card-label">Active Goal</div><div class="card-value" style="font-size:13px">${orch.activeGoal ? `<a href="#goal/${orch.activeGoal.id}" style="color:var(--accent)">${esc(orch.activeGoal.title?.slice(0, 40))}</a>` : "—"}</div></div>
+                    <div class="card"><div class="card-label">Replans</div><div class="card-value">${esc(orch.replanCount)}</div></div>
+                    <div class="card" style="border-color:${orch.totalStaleRecoveries > 0 ? 'var(--yellow)' : ''}"><div class="card-label">Stale Recoveries</div><div class="card-value" style="color:${orch.totalStaleRecoveries > 0 ? 'var(--red)' : ''}">${esc(orch.totalStaleRecoveries)}</div></div>
+                </div>`;
+
+                // Stale recovery details
+                if (orch.staleRecoveries?.length > 0) {
+                    html += makeTable([
+                        { label: "Task", key: "taskTitle", render: (r) => `<a href="#goal/${orch.goalId}" style="color:var(--accent)">${esc(r.taskTitle?.slice(0, 40))}</a>` },
+                        { label: "Status", key: "taskStatus", render: (r) => statusBadge(r.taskStatus) },
+                        { label: "Recovery Attempts", key: "count", render: (r) => `<strong style="color:${r.count >= 2 ? 'var(--red)' : ''}">${r.count}/${r.maxRetries}</strong>` },
+                        { label: "Exhausted", key: "exhausted", render: (r) => r.exhausted ? badge("YES", "red") : badge("No", "green") },
+                        { label: "Last Recovery", key: "lastRecovery", render: (r) => timeAgo(r.lastRecovery) },
+                    ], orch.staleRecoveries);
+                }
             }
 
             // Burn rate
