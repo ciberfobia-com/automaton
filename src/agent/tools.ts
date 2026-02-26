@@ -260,6 +260,23 @@ export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
           return `Invalid tier. Valid amounts (USD): ${TOPUP_TIERS.join(", ")}`;
         }
 
+        // Guard: block topups if no goals have ever completed (no proven ROI)
+        const completedGoals = (ctx.db.raw.prepare(
+          `SELECT COUNT(*) AS c FROM goals WHERE status = 'completed'`,
+        ).get() as { c: number })?.c ?? 0;
+        const failedGoals = (ctx.db.raw.prepare(
+          `SELECT COUNT(*) AS c FROM goals WHERE status = 'failed'`,
+        ).get() as { c: number })?.c ?? 0;
+
+        if (completedGoals === 0 && failedGoals >= 3) {
+          return (
+            `BLOCKED: You have ${failedGoals} failed goals and 0 completed goals.\n` +
+            `Buying more credits is wasteful until you can complete at least one goal.\n\n` +
+            `ACTION: Focus on completing a SIMPLE goal with your existing credits first.\n` +
+            `Do NOT try to topup. Fix the root cause of failures first.`
+          );
+        }
+
         // Check USDC balance first
         const { getUsdcBalance } = await import("../conway/x402.js");
         const usdcBalance = await getUsdcBalance(ctx.identity.address);
@@ -2401,17 +2418,32 @@ Model: ${ctx.inference.getDefaultModel()}
         // This prevents the create→fail→create loop from burning credits indefinitely.
         // NOTE: Must use JS-computed ISO cutoff because app stores ISO 8601 (with T/Z)
         // but SQLite datetime() returns space-separated format — string comparison fails.
-        const failedCutoff = new Date(Date.now() - 60 * 60_000).toISOString();
+        const failedCutoff = new Date(Date.now() - 120 * 60_000).toISOString();
         const recentFailedCount = (ctx.db.raw.prepare(
           `SELECT COUNT(*) AS c FROM goals WHERE status = 'failed'
            AND COALESCE(completed_at, created_at) > ?`,
         ).get(failedCutoff) as { c: number })?.c ?? 0;
 
+        // Also check if padre has EVER completed a goal
+        const everCompleted = (ctx.db.raw.prepare(
+          `SELECT COUNT(*) AS c FROM goals WHERE status = 'completed'`,
+        ).get() as { c: number })?.c ?? 0;
+
+        if (everCompleted === 0 && recentFailedCount >= 2) {
+          return (
+            `BLOCKED: ${recentFailedCount} goals have failed in the last 2 hours and you have NEVER completed a goal.\n` +
+            `Creating more goals will just repeat the same failures and waste credits.\n\n` +
+            `ACTION REQUIRED: STOP creating goals. Go to sleep for at least 30 minutes.\n` +
+            `When you wake up, analyze WHY goals fail and try a fundamentally different, simpler approach.\n` +
+            `Consider: the simplest possible task, like writing a file or running a command.`
+          );
+        }
+
         if (recentFailedCount >= 3) {
           return (
-            `BLOCKED: ${recentFailedCount} goals have failed in the last 60 minutes.\n` +
+            `BLOCKED: ${recentFailedCount} goals have failed in the last 2 hours.\n` +
             `Creating more goals will just repeat the same failures and waste credits.\n\n` +
-            `ACTION REQUIRED: STOP creating goals. Go to sleep for at least 10 minutes.\n` +
+            `ACTION REQUIRED: STOP creating goals. Go to sleep for at least 15 minutes.\n` +
             `When you wake up, try a completely different, simpler approach.`
           );
         }

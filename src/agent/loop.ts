@@ -238,7 +238,10 @@ export async function runAgentLoop(
         config: {
           ...config,
           spawnAgent: async (task: any) => {
-            // Try local worker FIRST — free (uses padre's inference client)
+            // Local worker ONLY — free, uses padre's inference client.
+            // Conway sandbox spawning is disabled: it costs credits per VM,
+            // frequently fails (402 insufficient credits, invalid wallet),
+            // and provides no benefit over local workers right now.
             try {
               const spawned = workerPool.spawn(task);
               logger.info("Spawned local worker", {
@@ -248,36 +251,8 @@ export async function runAgentLoop(
               });
               return spawned;
             } catch (localError) {
-              logger.warn("Failed to spawn local worker, trying Conway sandbox", {
+              logger.error("Failed to spawn local worker", localError instanceof Error ? localError : new Error(String(localError)), {
                 taskId: task.id,
-                error: localError instanceof Error ? localError.message : String(localError),
-              });
-            }
-
-            // Fallback: Conway sandbox (costs credits — creates a VM)
-            try {
-              const { generateGenesisConfig } = await import("../replication/genesis.js");
-              const { spawnChild } = await import("../replication/spawn.js");
-              const { ChildLifecycle } = await import("../replication/lifecycle.js");
-
-              const role = task.agentRole ?? "generalist";
-              const genesis = generateGenesisConfig(identity, config, {
-                name: `worker-${role}-${Date.now().toString(36)}`,
-                specialization: `${role}: ${task.title}`,
-              });
-
-              const lifecycle = new ChildLifecycle(db.raw);
-              const child = await spawnChild(conway, identity, db, genesis, lifecycle);
-
-              return {
-                address: child.address,
-                name: child.name,
-                sandboxId: child.sandboxId,
-              };
-            } catch (sandboxError) {
-              logger.warn("Conway sandbox spawn also failed", {
-                taskId: task.id,
-                error: sandboxError instanceof Error ? sandboxError.message : String(sandboxError),
               });
               return null;
             }

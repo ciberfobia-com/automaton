@@ -184,6 +184,19 @@ router.get("/diagnostics/snapshot", (_req, res) => {
             const note = isLocal ? " [uses padre inference, no separate funding]" : "";
 
             lines.push(`  [${c.status}] ${c.name || c.id.slice(0, 8)} (${runtime}) age=${createdAge}m silence=${lastCheckedAge != null ? lastCheckedAge + "m" : "—"} spent=${fmtCents(spent)}${taskInfo}${flag}${note}`);
+
+            // Show lifecycle events for this worker (last 5 transitions)
+            const lifecycleEvents = safeAll(`
+                SELECT from_state, to_state, reason, created_at
+                FROM child_lifecycle_events
+                WHERE child_id = ?
+                ORDER BY created_at DESC LIMIT 5
+            `, [c.id]);
+            if (lifecycleEvents.length > 0) {
+                for (const le of lifecycleEvents.reverse()) {
+                    lines.push(`      ${le.from_state} → ${le.to_state}: ${(le.reason || "").slice(0, 80)} ts=${le.created_at}`);
+                }
+            }
         }
     }
 

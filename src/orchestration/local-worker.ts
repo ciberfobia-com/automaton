@@ -204,6 +204,7 @@ export class LocalWorkerPool {
       }
 
       logger.info(`[WORKER ${workerId}] Turn ${turn + 1}/${maxTurns} — calling inference (tier: fast)`);
+      this.workerLog(workerId, task, `Turn ${turn + 1}/${maxTurns} — calling inference`);
 
       let response;
       try {
@@ -250,6 +251,7 @@ export class LocalWorkerPool {
               const args = typeof fn.arguments === "string" ? JSON.parse(fn.arguments) : fn.arguments;
               toolOutput = await tool.execute(args as Record<string, unknown>);
               logger.info(`[WORKER ${workerId}] ${fn.name} → ${toolOutput.slice(0, 120)}`);
+              this.workerLog(workerId, task, `  tool ${fn.name} → ${toolOutput.slice(0, 200)}`);
 
               // Track file artifacts
               if (fn.name === "write_file" && typeof (args as any).path === "string") {
@@ -257,6 +259,7 @@ export class LocalWorkerPool {
               }
             } catch (error) {
               toolOutput = `Error: ${error instanceof Error ? error.message : String(error)}`;
+              this.workerLog(workerId, task, `  tool ${fn.name} ERROR: ${toolOutput.slice(0, 200)}`);
             }
           }
 
@@ -317,8 +320,8 @@ export class LocalWorkerPool {
     try {
       this.config.db.prepare(
         `INSERT INTO event_stream (id, type, agent_address, goal_id, task_id, content, token_count, compacted_to, created_at)
-         VALUES (?, 'worker_log', ?, ?, ?, ?, 0, NULL, datetime('now'))`,
-      ).run(ulid(), `local://${workerId}`, task.goalId, task.id, message);
+         VALUES (?, 'worker_log', ?, ?, ?, ?, 0, NULL, ?)`,
+      ).run(ulid(), `local://${workerId}`, task.goalId, task.id, message, new Date().toISOString());
     } catch {
       // Never let log persistence crash the worker
     }
@@ -347,8 +350,8 @@ export class LocalWorkerPool {
   private updateWorkerChildStatus(address: string, status: "stopped" | "failed"): void {
     try {
       this.config.db.prepare(
-        `UPDATE children SET status = ?, last_checked = datetime('now') WHERE address = ?`,
-      ).run(status, address);
+        `UPDATE children SET status = ?, last_checked = ? WHERE address = ?`,
+      ).run(status, new Date().toISOString(), address);
     } catch {
       // Best-effort — don't crash the worker for a status update
     }
