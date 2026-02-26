@@ -549,7 +549,8 @@ export class Orchestrator {
     // Track recovery attempts per task to prevent infinite recover-assign loops.
     if (this.params.isWorkerAlive) {
       const assignedTasks = getTasksByGoal(this.params.db, goal.id)
-        .filter((t) => t.status === "assigned" && t.assignedTo);
+        .filter((t) => t.status === "assigned" && t.assignedTo
+          && !t.assignedTo.startsWith("local://"));
       for (const task of assignedTasks) {
         const alive = this.params.isWorkerAlive(task.assignedTo!);
         if (!alive) {
