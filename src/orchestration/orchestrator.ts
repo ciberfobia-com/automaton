@@ -166,6 +166,11 @@ export class Orchestrator {
 
       if (state.goalId) {
         updateGoalStatus(this.params.db, state.goalId, "failed");
+        // Cancel orphaned tasks so they don't accumulate as zombies
+        this.params.db.prepare(
+          `UPDATE task_graph SET status = 'cancelled'
+         WHERE goal_id = ? AND status IN ('pending', 'assigned', 'running', 'blocked')`,
+        ).run(state.goalId);
       }
 
       state = {
@@ -836,6 +841,12 @@ export class Orchestrator {
     }
 
     updateGoalStatus(this.params.db, state.goalId, "failed");
+
+    // Cancel orphaned tasks — prevent them from accumulating as zombies
+    this.params.db.prepare(
+      `UPDATE task_graph SET status = 'cancelled'
+       WHERE goal_id = ? AND status IN ('pending', 'assigned', 'running', 'blocked')`,
+    ).run(state.goalId);
 
     // Reset to idle so the orchestrator can pick up other active goals
     // instead of being stuck in "failed" forever.

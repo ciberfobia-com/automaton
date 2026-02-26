@@ -159,8 +159,8 @@ export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
         const sensitiveFiles = ["wallet.json", ".env", "automaton.json"];
         const sensitiveExtensions = [".key", ".pem"];
         if (sensitiveFiles.includes(basename) ||
-            sensitiveExtensions.some(ext => basename.endsWith(ext)) ||
-            basename.startsWith("private-key")) {
+          sensitiveExtensions.some(ext => basename.endsWith(ext)) ||
+          basename.startsWith("private-key")) {
           return "Blocked: Cannot read sensitive file. This protects credentials and secrets.";
         }
         try {
@@ -2394,6 +2394,22 @@ Model: ${ctx.inference.getDefaultModel()}
             `Duplicate goal rejected. An active goal already exists with a similar title:\n` +
             `"${duplicate.title}" (id: ${duplicate.id}, status: ${duplicate.status})\n` +
             `Monitor the existing goal with list_goals or orchestrator_status instead of creating duplicates.`
+          );
+        }
+
+        // Cooldown: if too many goals have failed recently, force the agent to wait.
+        // This prevents the create→fail→create loop from burning credits indefinitely.
+        const recentFailedCount = (ctx.db.raw.prepare(
+          `SELECT COUNT(*) AS c FROM goals WHERE status = 'failed'
+           AND updated_at > datetime('now', '-60 minutes')`,
+        ).get() as { c: number })?.c ?? 0;
+
+        if (recentFailedCount >= 3) {
+          return (
+            `BLOCKED: ${recentFailedCount} goals have failed in the last 60 minutes.\n` +
+            `Creating more goals will just repeat the same failures and waste credits.\n\n` +
+            `ACTION REQUIRED: STOP creating goals. Go to sleep for at least 10 minutes.\n` +
+            `When you wake up, try a completely different, simpler approach.`
           );
         }
 
