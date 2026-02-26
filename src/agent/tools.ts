@@ -2432,7 +2432,7 @@ Model: ${ctx.inference.getDefaultModel()}
         if (everCompleted === 0 && recentFailedCount >= 2) {
           // Force sleep — don't rely on the agent obeying the text
           try {
-            ctx.db.setKV("sleep_until", new Date(Date.now() + 30 * 60_000).toISOString());
+            ctx.db.setKV("sleep_until", new Date(Date.now() + 10 * 60_000).toISOString());
             ctx.db.raw.prepare("UPDATE kv SET value = ? WHERE key = 'agent_state'")
               .run("sleeping");
           } catch { /* best effort */ }

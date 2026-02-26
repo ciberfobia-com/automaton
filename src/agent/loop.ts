@@ -640,7 +640,7 @@ export async function runAgentLoop(
           const streak = streakRaw + 1;
           db.setKV("goal_block_streak", String(streak));
 
-          const sleepMinutes = streak <= 1 ? 10 : streak <= 2 ? 30 : 60;
+          const sleepMinutes = 10;
           log(config, `[LOOP] create_goal BLOCKED (streak=${streak}) — sleeping ${sleepMinutes}min.`);
           db.setKV("sleep_until", new Date(Date.now() + sleepMinutes * 60_000).toISOString());
           db.setAgentState("sleeping");
