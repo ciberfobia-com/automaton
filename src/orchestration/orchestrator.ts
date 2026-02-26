@@ -110,6 +110,15 @@ export class Orchestrator {
 
     let state = this.loadState();
 
+    // ─── Retroactive cleanup: cancel zombie tasks from failed/completed goals ───
+    // Tasks can accumulate in pending/blocked/assigned status if a goal was
+    // marked failed before orphan cleanup was added. Sweep once per tick.
+    this.params.db.prepare(
+      `UPDATE task_graph SET status = 'cancelled'
+       WHERE status IN ('pending', 'assigned', 'blocked')
+         AND goal_id IN (SELECT id FROM goals WHERE status IN ('failed', 'completed'))`,
+    ).run();
+
     try {
       switch (state.phase) {
         case "idle": {

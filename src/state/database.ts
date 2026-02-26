@@ -891,9 +891,9 @@ export function getGoalById(db: DatabaseType, id: string): GoalRow | undefined {
 }
 
 export function updateGoalStatus(db: DatabaseType, id: string, status: GoalStatus): void {
-  const completedAt = status === "completed" ? new Date().toISOString() : null;
+  const completedAt = (status === "completed" || status === "failed") ? new Date().toISOString() : null;
   db.prepare(
-    "UPDATE goals SET status = ?, completed_at = ? WHERE id = ?",
+    "UPDATE goals SET status = ?, completed_at = COALESCE(?, completed_at) WHERE id = ?",
   ).run(status, completedAt, id);
 }
 

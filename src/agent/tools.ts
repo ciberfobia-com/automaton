@@ -2401,7 +2401,7 @@ Model: ${ctx.inference.getDefaultModel()}
         // This prevents the create→fail→create loop from burning credits indefinitely.
         const recentFailedCount = (ctx.db.raw.prepare(
           `SELECT COUNT(*) AS c FROM goals WHERE status = 'failed'
-           AND updated_at > datetime('now', '-60 minutes')`,
+           AND COALESCE(completed_at, created_at) > datetime('now', '-60 minutes')`,
         ).get() as { c: number })?.c ?? 0;
 
         if (recentFailedCount >= 3) {
