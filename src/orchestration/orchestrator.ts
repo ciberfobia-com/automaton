@@ -97,6 +97,7 @@ export class Orchestrator {
     messaging: ColonyMessaging;
     inference: UnifiedInferenceClient;
     identity: AutomatonIdentity;
+    isWorkerAlive?: (address: string) => boolean;
     config: any;
   }) { }
 
