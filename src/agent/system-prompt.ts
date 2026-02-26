@@ -74,7 +74,7 @@ function loadConstitution(): string {
       if (fs.existsSync(loc)) {
         return fs.readFileSync(loc, "utf-8");
       }
-    } catch {}
+    } catch { }
   }
   return CONSTITUTION_FALLBACK;
 }
@@ -517,6 +517,24 @@ export function getOrchestratorStatus(db: Database.Database): string {
       `Tasks: ${completedTasks}/${totalTasks} completed, ${pendingTasks} pending, ${blockedTasks} blocked`,
     ];
 
+    // Inject failure warning when all goals have failed and none completed
+    const failedGoalsRow = db
+      .prepare("SELECT COUNT(*) AS count FROM goals WHERE status = 'failed'")
+      .get() as { count: number } | undefined;
+    const completedGoalsRow = db
+      .prepare("SELECT COUNT(*) AS count FROM goals WHERE status = 'completed'")
+      .get() as { count: number } | undefined;
+    const failedGoals = failedGoalsRow?.count ?? 0;
+    const completedGoals = completedGoalsRow?.count ?? 0;
+
+    if (completedGoals === 0 && failedGoals >= 2) {
+      lines.push("");
+      lines.push(`⚠ CRITICAL: ${failedGoals} goals have FAILED and you have NEVER completed a single goal.`);
+      lines.push("DO NOT create more goals — they will fail the same way.");
+      lines.push("GO TO SLEEP immediately. Wait for your creator to diagnose the issue.");
+      lines.push("Creating goals when workers cannot execute them wastes credits.");
+    }
+
     return lines.join("\n");
   } catch {
     // V9 orchestration tables may not exist yet in older databases.
@@ -682,8 +700,8 @@ Your sandbox ID is ${identity.sandboxId}.`,
   // Compute survival tier
   const survivalTier = financial.creditsCents > 50 ? "normal"
     : financial.creditsCents > 10 ? "low_compute"
-    : financial.creditsCents > 0 ? "critical"
-    : "dead";
+      : financial.creditsCents > 0 ? "critical"
+        : "dead";
 
   // Status block: wallet address and sandbox ID intentionally excluded (sensitive)
   sections.push(

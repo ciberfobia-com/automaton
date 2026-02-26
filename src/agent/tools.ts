@@ -2430,6 +2430,12 @@ Model: ${ctx.inference.getDefaultModel()}
         ).get() as { c: number })?.c ?? 0;
 
         if (everCompleted === 0 && recentFailedCount >= 2) {
+          // Force sleep — don't rely on the agent obeying the text
+          try {
+            ctx.db.setKV("sleep_until", new Date(Date.now() + 30 * 60_000).toISOString());
+            ctx.db.raw.prepare("UPDATE kv SET value = ? WHERE key = 'agent_state'")
+              .run("sleeping");
+          } catch { /* best effort */ }
           return (
             `BLOCKED: ${recentFailedCount} goals have failed in the last 2 hours and you have NEVER completed a goal.\n` +
             `Creating more goals will just repeat the same failures and waste credits.\n\n` +
@@ -2440,6 +2446,10 @@ Model: ${ctx.inference.getDefaultModel()}
         }
 
         if (recentFailedCount >= 3) {
+          // Force sleep — don't rely on the agent obeying the text
+          try {
+            ctx.db.setKV("sleep_until", new Date(Date.now() + 15 * 60_000).toISOString());
+          } catch { /* best effort */ }
           return (
             `BLOCKED: ${recentFailedCount} goals have failed in the last 2 hours.\n` +
             `Creating more goals will just repeat the same failures and waste credits.\n\n` +

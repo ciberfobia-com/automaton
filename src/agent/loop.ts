@@ -627,16 +627,22 @@ export async function runAgentLoop(
       }
 
       // ── create_goal BLOCKED fast-break ──
-      // If agent keeps calling create_goal and getting BLOCKED, force sleep
-      // after 2 consecutive attempts to prevent token waste.
+      // If agent keeps calling create_goal and getting BLOCKED, force escalating sleep.
+      // Streak tracked in KV to survive PM2 restarts.
       const blockedGoalCall = turn.toolCalls.find(
         (tc) => tc.name === "create_goal" && tc.result?.includes("BLOCKED"),
       );
       if (blockedGoalCall) {
         blockedGoalTurns++;
         if (blockedGoalTurns >= 2) {
-          log(config, "[LOOP] create_goal BLOCKED twice — forcing sleep to let workers finish.");
-          db.setKV("sleep_until", new Date(Date.now() + 120_000).toISOString());
+          // Escalating backoff: 10m → 30m → 60m
+          const streakRaw = parseInt(db.getKV("goal_block_streak") || "0", 10);
+          const streak = streakRaw + 1;
+          db.setKV("goal_block_streak", String(streak));
+
+          const sleepMinutes = streak <= 1 ? 10 : streak <= 2 ? 30 : 60;
+          log(config, `[LOOP] create_goal BLOCKED (streak=${streak}) — sleeping ${sleepMinutes}min.`);
+          db.setKV("sleep_until", new Date(Date.now() + sleepMinutes * 60_000).toISOString());
           db.setAgentState("sleeping");
           onStateChange?.("sleeping");
           running = false;
@@ -645,6 +651,15 @@ export async function runAgentLoop(
         }
       } else {
         blockedGoalTurns = 0;
+        // Reset streak when agent does something other than create_goal
+        const hasNonGoalTool = turn.toolCalls.some(
+          (tc) => tc.name !== "create_goal" && tc.name !== "check_credits" &&
+            tc.name !== "check_usdc_balance" && tc.name !== "system_synopsis" &&
+            tc.name !== "list_goals" && tc.name !== "orchestrator_status",
+        );
+        if (hasNonGoalTool) {
+          db.setKV("goal_block_streak", "0");
+        }
       }
 
       // ── Loop Detection ──

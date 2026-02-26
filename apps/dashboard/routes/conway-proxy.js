@@ -7,28 +7,74 @@
  */
 
 const express = require("express");
-const router = express.Router();
+const fs = require("fs");
+const path = require("path");
+const dashConfig = require("../lib/config");
 
+const router = express.Router();
 const CONWAY_API_URL = process.env.CONWAY_API_URL || "https://api.conway.tech/v1";
-const CONWAY_INFERENCE_URL = process.env.CONWAY_INFERENCE_URL || "https://inference.conway.tech/v1";
+
+let _cachedApiKey = null;
+let _cacheTime = 0;
+const CACHE_TTL = 60_000; // Re-read files every 60s
 
 function getApiKey() {
-    // Try env first, then fall back to kv table
-    if (process.env.CONWAY_API_KEY) return process.env.CONWAY_API_KEY;
+    // Cache to avoid reading files on every request
+    if (_cachedApiKey && (Date.now() - _cacheTime) < CACHE_TTL) return _cachedApiKey;
+
+    // 1. Environment variable
+    if (process.env.CONWAY_API_KEY) {
+        _cachedApiKey = process.env.CONWAY_API_KEY;
+        _cacheTime = Date.now();
+        return _cachedApiKey;
+    }
+
+    // 2. ~/.automaton/automaton.json → conwayApiKey
+    try {
+        const automatonPath = path.join(dashConfig.automatonDir, "automaton.json");
+        if (fs.existsSync(automatonPath)) {
+            const data = JSON.parse(fs.readFileSync(automatonPath, "utf-8"));
+            if (data.conwayApiKey) {
+                _cachedApiKey = data.conwayApiKey;
+                _cacheTime = Date.now();
+                return _cachedApiKey;
+            }
+        }
+    } catch { }
+
+    // 3. ~/.automaton/config.json → apiKey (Conway provisioned key)
+    try {
+        const configPath = path.join(dashConfig.automatonDir, "config.json");
+        if (fs.existsSync(configPath)) {
+            const data = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+            if (data.apiKey) {
+                _cachedApiKey = data.apiKey;
+                _cacheTime = Date.now();
+                return _cachedApiKey;
+            }
+        }
+    } catch { }
+
+    // 4. KV table fallback
     try {
         const db = require("../lib/db").get();
         const row = db.prepare("SELECT value FROM kv WHERE key = 'conway_api_key'").get();
-        if (row?.value) return row.value;
+        if (row?.value) {
+            _cachedApiKey = row.value;
+            _cacheTime = Date.now();
+            return _cachedApiKey;
+        }
     } catch { }
+
     return null;
 }
 
-async function conwayGet(path) {
+async function conwayGet(apiPath) {
     const apiKey = getApiKey();
     if (!apiKey) return { error: "No CONWAY_API_KEY configured", status: 401 };
 
     try {
-        const url = `${CONWAY_API_URL}${path}`;
+        const url = `${CONWAY_API_URL}${apiPath}`;
         const resp = await fetch(url, {
             method: "GET",
             headers: {
