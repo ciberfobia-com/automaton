@@ -164,6 +164,35 @@ export class Orchestrator {
       }
     }
 
+    // ─── Watchdog: auto-fail stuck local worker tasks ─────────────────
+    // If a task has been 'assigned' to a local:// worker for >2 minutes
+    // and the worker has produced ZERO event_stream entries, the worker
+    // likely crashed on spawn or its inference call hung. Fail the task
+    // so the orchestrator can retry or reassign.
+    const stuckWatchdogTasks = this.params.db.prepare(
+      `SELECT tg.id, tg.title, tg.assigned_to
+       FROM task_graph tg
+       WHERE tg.status = 'assigned'
+         AND tg.assigned_to LIKE 'local://%'
+         AND tg.goal_id IN (SELECT id FROM goals WHERE status = 'active')
+         AND (julianday('now') - julianday(COALESCE(tg.started_at, tg.created_at))) * 86400 > 120
+         AND NOT EXISTS (
+           SELECT 1 FROM event_stream es
+           WHERE es.agent_address = tg.assigned_to
+             AND es.type = 'worker_log'
+         )`,
+    ).all() as Array<{ id: string; title: string; assigned_to: string }>;
+
+    for (const stuck of stuckWatchdogTasks) {
+      logger.warn("Watchdog: failing stuck local worker task (no activity after 2min)", {
+        taskId: stuck.id,
+        title: stuck.title?.slice(0, 50),
+        worker: stuck.assigned_to,
+      });
+      try {
+        failTask(this.params.db, stuck.id, "Worker never started — no activity after 2 minutes", true);
+      } catch { /* task may already be terminal */ }
+    }
     try {
       switch (state.phase) {
         case "idle": {
