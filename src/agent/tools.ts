@@ -2399,10 +2399,13 @@ Model: ${ctx.inference.getDefaultModel()}
 
         // Cooldown: if too many goals have failed recently, force the agent to wait.
         // This prevents the create→fail→create loop from burning credits indefinitely.
+        // NOTE: Must use JS-computed ISO cutoff because app stores ISO 8601 (with T/Z)
+        // but SQLite datetime() returns space-separated format — string comparison fails.
+        const failedCutoff = new Date(Date.now() - 60 * 60_000).toISOString();
         const recentFailedCount = (ctx.db.raw.prepare(
           `SELECT COUNT(*) AS c FROM goals WHERE status = 'failed'
-           AND COALESCE(completed_at, created_at) > datetime('now', '-60 minutes')`,
-        ).get() as { c: number })?.c ?? 0;
+           AND COALESCE(completed_at, created_at) > ?`,
+        ).get(failedCutoff) as { c: number })?.c ?? 0;
 
         if (recentFailedCount >= 3) {
           return (

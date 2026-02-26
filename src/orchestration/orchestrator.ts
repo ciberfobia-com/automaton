@@ -119,6 +119,21 @@ export class Orchestrator {
          AND goal_id IN (SELECT id FROM goals WHERE status IN ('failed', 'completed'))`,
     ).run();
 
+    // ─── Mark ghost local workers as stopped ───────────────────────────
+    // After a PM2 restart, local workers' in-memory processes are lost but
+    // their DB records stay "running". Mark them as stopped if they have
+    // no active tasks assigned and are local:// addresses.
+    this.params.db.prepare(
+      `UPDATE children SET status = 'stopped', last_checked = ?
+       WHERE status = 'running'
+         AND address LIKE 'local://%'
+         AND address NOT IN (
+           SELECT DISTINCT assigned_to FROM task_graph
+           WHERE assigned_to IS NOT NULL
+             AND status IN ('assigned', 'running')
+         )`,
+    ).run(new Date().toISOString());
+
     try {
       switch (state.phase) {
         case "idle": {
