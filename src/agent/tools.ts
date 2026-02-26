@@ -856,6 +856,8 @@ Model: ${ctx.inference.getDefaultModel()}
     },
 
     // ── Financial: Transfer Credits ──
+    // Mutex to serialize transfers and prevent TOCTOU race (Conway issue #177)
+    // Without this, two concurrent transfers could both pass the 50% balance guard.
     {
       name: "transfer_credits",
       description: "Transfer Conway compute credits to another address.",
@@ -876,30 +878,50 @@ Model: ${ctx.inference.getDefaultModel()}
           return `Blocked: amount_cents must be a positive number, got ${amount}.`;
         }
 
-        // Guard: don't transfer more than half your balance
-        const balance = await ctx.conway.getCreditsBalance();
-        if (amount > balance / 2) {
-          return `Blocked: Cannot transfer more than half your balance ($${(balance / 100).toFixed(2)}). Self-preservation.`;
+        // Acquire transfer lock via KV to serialize balance-check-and-transfer.
+        // This prevents TOCTOU: two concurrent calls both passing the 50% guard.
+        const lockKey = "transfer_in_progress";
+        const lockValue = ctx.db.getKV(lockKey);
+        if (lockValue) {
+          const lockTime = new Date(lockValue).getTime();
+          // Auto-expire lock after 30 seconds (in case of crash)
+          if (Date.now() - lockTime < 30_000) {
+            return "Blocked: Another transfer is in progress. Wait and retry.";
+          }
         }
 
-        const transfer = await ctx.conway.transferCredits(
-          args.to_address as string,
-          amount,
-          args.reason as string | undefined,
-        );
+        try {
+          // Set lock
+          ctx.db.setKV(lockKey, new Date().toISOString());
 
-        const { ulid } = await import("ulid");
-        ctx.db.insertTransaction({
-          id: ulid(),
-          type: "transfer_out",
-          amountCents: amount,
-          balanceAfterCents:
-            transfer.balanceAfterCents ?? Math.max(balance - amount, 0),
-          description: `Transfer to ${args.to_address}: ${args.reason || ""}`,
-          timestamp: new Date().toISOString(),
-        });
+          // Guard: don't transfer more than half your balance
+          const balance = await ctx.conway.getCreditsBalance();
+          if (amount > balance / 2) {
+            return `Blocked: Cannot transfer more than half your balance ($${(balance / 100).toFixed(2)}). Self-preservation.`;
+          }
 
-        return `Credit transfer submitted: $${(amount / 100).toFixed(2)} to ${transfer.toAddress} (status: ${transfer.status}, id: ${transfer.transferId || "n/a"})`;
+          const transfer = await ctx.conway.transferCredits(
+            args.to_address as string,
+            amount,
+            args.reason as string | undefined,
+          );
+
+          const { ulid } = await import("ulid");
+          ctx.db.insertTransaction({
+            id: ulid(),
+            type: "transfer_out",
+            amountCents: amount,
+            balanceAfterCents:
+              transfer.balanceAfterCents ?? Math.max(balance - amount, 0),
+            description: `Transfer to ${args.to_address}: ${args.reason || ""}`,
+            timestamp: new Date().toISOString(),
+          });
+
+          return `Credit transfer submitted: $${(amount / 100).toFixed(2)} to ${transfer.toAddress} (status: ${transfer.status}, id: ${transfer.transferId || "n/a"})`;
+        } finally {
+          // Always release lock
+          try { ctx.db.deleteKV(lockKey); } catch { /* best effort */ }
+        }
       },
     },
 
