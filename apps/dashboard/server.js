@@ -47,6 +47,7 @@ app.use("/api", require("./routes/admin"));
 app.use("/api", require("./routes/db-inspector"));
 app.use("/api", require("./routes/orchestrator-health"));
 app.use("/api", require("./routes/diagnostics-snapshot"));
+app.use("/api", require("./routes/conway-proxy"));
 
 // Legacy V2 routes (kept for backward compat, will be deprecated)
 app.use("/api/v2/economy", require("./routes/v2/economy"));

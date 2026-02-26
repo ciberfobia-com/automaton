@@ -755,6 +755,99 @@
             html += `</div>`;
             return html;
         },
+
+        // ══════════════════════════════════════════════════
+        //  CONWAY CLOUD — live infrastructure from Conway API
+        // ══════════════════════════════════════════════════
+        async conway_cloud() {
+            const [status, sandboxes, creditsHistory, pricing] = await Promise.allSettled([
+                api("/conway/status"),
+                api("/conway/sandboxes"),
+                api("/conway/credits/history?limit=30"),
+                api("/conway/credits/pricing"),
+            ]).then(results => results.map(r => r.status === "fulfilled" ? r.value : null));
+
+            let html = "";
+
+            // Connection status
+            if (!status || !status.connected) {
+                const reason = status?.reason || "Conway API proxy not configured";
+                html += `<div class="card" style="border-color:var(--red);margin-bottom:16px">
+                    <div class="card-label" style="color:var(--red)">⚠ Conway API Not Connected</div>
+                    <div class="card-sub">${esc(reason)}</div>
+                    <div class="card-sub" style="margin-top:8px">Set <code>CONWAY_API_KEY</code> environment variable on the VPS to enable live Conway data.</div>
+                </div>`;
+            } else {
+                html += `<div class="card" style="border-color:var(--green);margin-bottom:16px">
+                    <div class="card-label" style="color:var(--green)">✓ Conway API Connected</div>
+                    <div class="card-sub">API: ${esc(status.api_url)}</div>
+                    ${status.credits ? `<div class="card-sub">Live Balance: <strong>${formatCents(status.credits.creditsCents || 0)}</strong></div>` : ""}
+                </div>`;
+            }
+
+            // Live Sandboxes
+            html += `<div class="section-header"><span class="section-title">☁️ Conway Sandboxes (Live)</span></div>`;
+            const sbxData = sandboxes?.data || sandboxes || [];
+            if (Array.isArray(sbxData) && sbxData.length > 0) {
+                html += makeTable([
+                    { label: "ID", key: "id", render: (r) => `<code style="font-size:11px">${esc((r.short_id || r.id || "").slice(0, 20))}</code>` },
+                    { label: "Name", key: "name", render: (r) => esc(r.name || "—") },
+                    { label: "Status", key: "status", render: (r) => statusBadge(r.status) },
+                    { label: "vCPU", key: "vcpu", render: (r) => r.vcpu || "—" },
+                    { label: "RAM", key: "memory_mb", render: (r) => r.memory_mb ? `${r.memory_mb}MB` : "—" },
+                    { label: "Disk", key: "disk_gb", render: (r) => r.disk_gb ? `${r.disk_gb}GB` : "—" },
+                    { label: "Region", key: "region", render: (r) => esc(r.region || "—") },
+                    { label: "Terminal", key: "terminal_url", render: (r) => r.terminal_url ? `<a href="${esc(r.terminal_url)}" target="_blank" style="color:var(--accent)">Open ↗</a>` : "—" },
+                ], sbxData);
+            } else if (sandboxes?.error) {
+                html += `<div class="empty" style="color:var(--red)">${esc(sandboxes.error)}</div>`;
+            } else {
+                html += `<div class="empty">No sandboxes found. Padre hasn't created any Conway VMs (or API not connected).</div>`;
+            }
+
+            // Credits Transaction History
+            html += `<div class="section-header" style="margin-top:24px"><span class="section-title">💳 Credits Transaction History (Conway)</span></div>`;
+            const txns = creditsHistory?.data || creditsHistory || [];
+            if (Array.isArray(txns) && txns.length > 0) {
+                html += makeTable([
+                    {
+                        label: "Type", key: "type", render: (r) => {
+                            const colors = { inference: "blue", topup: "green", credit_purchase: "green", transfer_out: "red", transfer_in: "green", sandbox: "yellow" };
+                            return badge(r.type || "unknown", colors[r.type] || "blue");
+                        }
+                    },
+                    {
+                        label: "Amount", key: "amount", render: (r) => {
+                            const cents = r.amount_cents || r.amount || 0;
+                            const color = cents < 0 ? "var(--red)" : "var(--green)";
+                            return `<span style="color:${color};font-weight:600">${formatCents(cents)}</span>`;
+                        }
+                    },
+                    { label: "Description", key: "description", render: (r) => esc((r.description || r.model || "").slice(0, 60)) },
+                    { label: "Time", key: "created_at", render: (r) => timeAgo(r.created_at || r.timestamp) },
+                ], txns);
+            } else if (creditsHistory?.error) {
+                html += `<div class="empty" style="color:var(--red)">${esc(creditsHistory.error)}</div>`;
+            } else {
+                html += `<div class="empty">No transaction history available.</div>`;
+            }
+
+            // Pricing tiers
+            if (pricing && !pricing.error) {
+                const tiers = pricing?.data || pricing?.tiers || pricing || [];
+                if (Array.isArray(tiers) && tiers.length > 0) {
+                    html += `<div class="section-header" style="margin-top:24px"><span class="section-title">📊 VM Pricing Tiers</span></div>`;
+                    html += makeTable([
+                        { label: "vCPU", key: "vcpu" },
+                        { label: "RAM", key: "memory_mb", render: (r) => r.memory_mb ? `${r.memory_mb}MB` : "—" },
+                        { label: "Disk", key: "disk_gb", render: (r) => r.disk_gb ? `${r.disk_gb}GB` : "—" },
+                        { label: "Cost/Month", key: "monthly_cost", render: (r) => r.monthly_cost ? `$${r.monthly_cost}` : formatCents(r.cost_cents) },
+                    ], tiers);
+                }
+            }
+
+            return html || `<div class="empty">Conway Cloud data unavailable</div>`;
+        },
     };
 
     // ─── Child Tab Renderers (kept from original) ────────
@@ -945,6 +1038,7 @@
             soul: "Soul",
             config: "Config",
             childDetail: "Child Detail",
+            conway_cloud: "Conway Cloud",
         };
         $("#pageTitle").textContent = titles[section] || section;
 

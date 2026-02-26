@@ -252,6 +252,23 @@ export class MemoryIngestionPipeline {
         const existing = this.knowledgeStore
           .search(fact.key, fact.category, 50)
           .filter((entry) => this.normalizeKey(entry.key) === this.normalizeKey(fact.key));
+
+        // Volatile keys (balances, prices) change constantly — update in place, no contradiction
+        const isVolatile = /^pricing:|^balance:|credit|usdc/i.test(fact.key);
+        if (isVolatile && existing.length > 0) {
+          // Just update the existing entry — this is expected to change
+          const target = existing[0];
+          this.knowledgeStore.update(target.id, {
+            content: fact.value,
+            source: fact.source,
+            confidence: Math.max(target.confidence, fact.confidence),
+            lastVerified: new Date().toISOString(),
+            tokenCount: estimateTokens(fact.value),
+          });
+          confirmed.push(fact);
+          continue;
+        }
+
         const contradictions = this.detectContradictions(fact, existing);
 
         if (contradictions.length > 0) {
