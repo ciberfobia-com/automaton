@@ -88,7 +88,11 @@ body {
 .nav-list {
     list-style: none;
     padding: 12px 8px;
+}
+
+.sidebar>.nav-list:first-of-type {
     flex: 1;
+    overflow-y: auto;
 }
 
 .nav-link {
@@ -618,4 +622,45 @@ tr:hover td {
 .timeline-ts {
     font-size: 11px;
     color: var(--text-muted);
+}
+
+/* ─── Nav Separator ────────────────────────────────────────── */
+
+.nav-separator {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 16px;
+}
+
+/* ─── Debug Log Viewer ─────────────────────────────────────── */
+
+.debug-log-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.debug-log-toolbar .btn.active {
+    background: var(--accent-glow);
+    color: var(--accent);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.debug-log-viewer {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    max-height: 600px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-bottom: 24px;
 }

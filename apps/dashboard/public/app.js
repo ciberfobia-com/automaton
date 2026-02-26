@@ -567,6 +567,29 @@
                 html += `<div class="empty" style="margin-top:24px;color:var(--green)">✓ All systems nominal. No stalls, zombies, or dispatch failures detected.</div>`;
             }
 
+            // ── Debug Log — system snapshot for AI analysis ──
+            html += `<div class="nav-separator" style="margin:32px 0 16px"></div>`;
+            html += `<div class="section-header"><span class="section-title">📋 Debug Log — System Snapshot</span></div>`;
+            html += `<div class="card-sub" style="margin-bottom:12px">
+                Generate a plain-text snapshot of the entire system state. Copy and paste into an AI tool for error analysis.
+            </div>`;
+            html += `<div class="debug-log-toolbar">
+                <div style="display:flex;gap:6px">
+                    <button class="btn ${window.__debugMinutes === 2 ? 'active' : ''}" onclick="window.__loadDebugLog(2)">Last 2 min</button>
+                    <button class="btn ${window.__debugMinutes === 5 || !window.__debugMinutes ? 'active' : ''}" onclick="window.__loadDebugLog(5)">Last 5 min</button>
+                    <button class="btn ${window.__debugMinutes === 10 ? 'active' : ''}" onclick="window.__loadDebugLog(10)">Last 10 min</button>
+                </div>
+                <button class="btn" onclick="window.__copyDebugLog()" id="copyDebugBtn" style="display:${window.__debugLogText ? 'inline-flex' : 'none'}">📋 Copy to Clipboard</button>
+            </div>`;
+
+            if (window.__debugLogText) {
+                html += `<pre class="debug-log-viewer" id="debugLogContent">${esc(window.__debugLogText)}</pre>`;
+            } else if (window.__debugLoading) {
+                html += `<div class="debug-log-viewer" style="text-align:center;padding:40px;color:var(--text-muted)">Loading snapshot…</div>`;
+            } else {
+                html += `<div class="debug-log-viewer" style="text-align:center;padding:40px;color:var(--text-muted)">Click a time window button above to generate a snapshot</div>`;
+            }
+
             return html;
         },
 
@@ -845,6 +868,50 @@
     window.__dbOffset = 0;
     window.__dbSetOffset = (o) => { window.__dbOffset = o; navigate(); };
     window.__switchDbTable = (t) => { window.__dbTable = t; window.__dbOffset = 0; navigate(); };
+
+    // ─── Debug Log State ────────────────────────────────
+    window.__debugLogText = "";
+    window.__debugMinutes = 0;
+    window.__debugLoading = false;
+
+    window.__loadDebugLog = async (minutes) => {
+        window.__debugMinutes = minutes;
+        window.__debugLoading = true;
+        window.__debugLogText = "";
+        navigate(); // re-render to show loading state
+        try {
+            const resp = await fetch(`/api/diagnostics/snapshot?minutes=${minutes}`);
+            window.__debugLogText = await resp.text();
+        } catch (err) {
+            window.__debugLogText = `Error loading snapshot: ${err.message}`;
+        }
+        window.__debugLoading = false;
+        navigate(); // re-render with content
+    };
+
+    window.__copyDebugLog = async () => {
+        try {
+            await navigator.clipboard.writeText(window.__debugLogText);
+            const btn = document.getElementById("copyDebugBtn");
+            if (btn) {
+                btn.textContent = "✓ Copied!";
+                setTimeout(() => { btn.textContent = "📋 Copy to Clipboard"; }, 2000);
+            }
+        } catch {
+            // Fallback for older browsers
+            const ta = document.createElement("textarea");
+            ta.value = window.__debugLogText;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand("copy");
+            document.body.removeChild(ta);
+            const btn = document.getElementById("copyDebugBtn");
+            if (btn) {
+                btn.textContent = "✓ Copied!";
+                setTimeout(() => { btn.textContent = "📋 Copy to Clipboard"; }, 2000);
+            }
+        }
+    };
 
     // ─── Router ─────────────────────────────────────────
 
