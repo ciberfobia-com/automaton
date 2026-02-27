@@ -1,0 +1,19 @@
+[Unit]
+Description=CiberPadre Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/automaton/apps/dashboard
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+Environment=NODE_ENV=production
+Environment=DASHBOARD_PORT=4020
+Environment=DASHBOARD_BIND=0.0.0.0
+Environment=DASHBOARD_STATE_DB_PATH=/root/.automaton/state.db
+
+[Install]
+WantedBy=multi-user.target

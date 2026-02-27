@@ -85,6 +85,9 @@ export interface AgentLoopOptions {
   onStateChange?: (state: AgentState) => void;
   onTurnComplete?: (turn: AgentTurn) => void;
   ollamaBaseUrl?: string;
+  /** Register a shutdown hook that will be called on SIGTERM/SIGINT.
+   *  Used to propagate clean shutdown to subsystems like the worker pool. */
+  registerShutdownHook?: (hook: () => Promise<void>) => void;
 }
 
 /**
@@ -216,6 +219,15 @@ export async function runAgentLoop(
         conway,
         workerId: `pool-${identity.name}`,
       });
+
+      // Register shutdown hook so the process-level SIGTERM handler
+      // can cleanly abort workers and reset tasks to 'pending'.
+      if (options.registerShutdownHook) {
+        options.registerShutdownHook(async () => {
+          logger.info("Shutdown hook: stopping local worker pool...");
+          await workerPool.shutdown();
+        });
+      }
 
       orchestrator = new Orchestrator({
         db: db.raw,
@@ -628,7 +640,7 @@ export async function runAgentLoop(
 
       // ── create_goal BLOCKED fast-break ──
       // If agent keeps calling create_goal and getting BLOCKED, force escalating sleep.
-      // Streak tracked in KV to survive PM2 restarts.
+      // Streak tracked in KV to survive process restarts.
       const blockedGoalCall = turn.toolCalls.find(
         (tc) => tc.name === "create_goal" && tc.result?.includes("BLOCKED"),
       );

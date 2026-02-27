@@ -1,18 +1,21 @@
 /**
- * PM2 Log Parser
+ * Runtime Log Parser
  *
- * Parses automaton PM2 logs for financial events (topups, transfers)
+ * Parses automaton runtime logs for financial events (topups, transfers)
  * that may not be persisted to the database.
  *
+ * Reads from journalctl (systemd) first, falls back to log files on disk.
  * Returns log-derived events marked with source="logs".
  */
 
+const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-// Common PM2 log locations
-const LOG_PATHS = [
+// Fallback log file locations (legacy PM2 or manual log files)
+const FALLBACK_LOG_PATHS = [
+    "/var/log/ciberpadre.log",
     "/root/.pm2/logs/automaton-out.log",
     path.join(os.homedir(), ".pm2", "logs", "automaton-out.log"),
 ];
@@ -67,70 +70,104 @@ function extractAmounts(text) {
 }
 
 /**
- * Parse PM2 logs and extract topup/financial events.
- * Returns at most 100 most recent events.
+ * Read log lines from journalctl (systemd).
+ * Returns null if unavailable.
  */
-function getTopupEvents() {
+function readJournalctlLines() {
+    try {
+        const raw = execSync(
+            `journalctl -u ciberpadre --no-pager -n 2000 --output=short-iso 2>/dev/null`,
+            { encoding: "utf-8", timeout: 5000 }
+        );
+        return raw.split("\n");
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Read log lines from a log file on disk.
+ * Returns null if no file is found.
+ */
+function readLogFileLines() {
     let logPath = null;
-    for (const p of LOG_PATHS) {
+    for (const p of FALLBACK_LOG_PATHS) {
         if (fs.existsSync(p)) {
             logPath = p;
             break;
         }
     }
-
-    if (!logPath) {
-        return { available: false, path: null, events: [], message: "PM2 log file not found" };
-    }
+    if (!logPath) return null;
 
     try {
         const stat = fs.statSync(logPath);
-        // Only read last 500KB to avoid memory issues on large logs
         const readSize = Math.min(stat.size, 500 * 1024);
         const fd = fs.openSync(logPath, "r");
         const buffer = Buffer.alloc(readSize);
         fs.readSync(fd, buffer, 0, readSize, Math.max(0, stat.size - readSize));
         fs.closeSync(fd);
+        return { lines: buffer.toString("utf-8").split("\n"), path: logPath };
+    } catch {
+        return null;
+    }
+}
 
-        const lines = buffer.toString("utf-8").split("\n");
-        const events = [];
-
-        for (const line of lines) {
-            for (const pattern of PATTERNS) {
-                const match = line.match(pattern.regex);
-                if (match) {
-                    const timestamp = match[1] || null;
-                    const detail = match[2] || line;
-                    const amounts = extractAmounts(detail);
-                    events.push({
-                        source: "logs",
-                        type: pattern.type,
-                        subtype: pattern.subtype,
-                        timestamp,
-                        detail: detail.trim(),
-                        ...amounts,
-                        rawLine: line.trim().slice(0, 300),
-                    });
-                    break; // Only match first pattern per line
-                }
-            }
-        }
-
-        // Return latest 100
+/**
+ * Parse runtime logs and extract topup/financial events.
+ * Tries journalctl first, falls back to log files.
+ * Returns at most 100 most recent events.
+ */
+function getTopupEvents() {
+    // Try journalctl first
+    const journalLines = readJournalctlLines();
+    if (journalLines) {
+        const events = parseLines(journalLines);
         return {
             available: true,
-            path: logPath,
+            source: "journalctl",
             events: events.slice(-100),
             totalMatches: events.length,
         };
-    } catch (err) {
-        return {
-            available: false,
-            path: logPath,
-            events: [],
-            message: `Failed to parse logs: ${err.message}`,
-        };
     }
+
+    // Fall back to log files
+    const fileResult = readLogFileLines();
+    if (!fileResult) {
+        return { available: false, source: null, events: [], message: "No log source found" };
+    }
+
+    const events = parseLines(fileResult.lines);
+    return {
+        available: true,
+        source: fileResult.path,
+        events: events.slice(-100),
+        totalMatches: events.length,
+    };
+}
+
+function parseLines(lines) {
+    const events = [];
+    for (const line of lines) {
+        for (const pattern of PATTERNS) {
+            const match = line.match(pattern.regex);
+            if (match) {
+                const timestamp = match[1] || null;
+                const detail = match[2] || line;
+                const amounts = extractAmounts(detail);
+                events.push({
+                    source: "logs",
+                    type: pattern.type,
+                    subtype: pattern.subtype,
+                    timestamp,
+                    detail: detail.trim(),
+                    ...amounts,
+                    rawLine: line.trim().slice(0, 300),
+                });
+                break;
+            }
+        }
+    }
+    return events;
 }
 
 module.exports = { getTopupEvents };

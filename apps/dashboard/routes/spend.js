@@ -7,7 +7,7 @@
  *   3. spend_tracking — per-tool spend with daily/hourly windows
  *   4. inference_costs — per-call model costs
  *   5. onchain_transactions — blockchain ops
- *   6. PM2 logs — fallback for topup events not persisted to DB
+ *   6. Runtime logs — fallback for topup events not persisted to DB
  */
 
 const { Router } = require("express");
@@ -107,7 +107,7 @@ router.get("/spend", (req, res) => {
         "SELECT id, name, status, funded_amount_cents, created_at FROM children ORDER BY created_at DESC"
     );
 
-    // ── 7. PM2 Log-derived events (fallback) ───────────────
+    // ── 7. Runtime log-derived events (fallback) ─────────────
     const logEvents = logParser.getTopupEvents();
 
     res.json({

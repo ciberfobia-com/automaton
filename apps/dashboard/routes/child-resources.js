@@ -4,7 +4,7 @@
  * GET /api/children/:id/resources
  *
  * Returns lifecycle-derived resource/health metrics.
- * Children run in E2B sandboxes (not PM2), so CPU/memory is unavailable.
+ * Children run in E2B sandboxes, so CPU/memory is unavailable.
  */
 
 const { Router } = require("express");
@@ -76,7 +76,7 @@ router.get("/children/:id/resources", (req, res) => {
         cpu_percent: null,
         uptime_seconds: uptimeSeconds,
         restart_count: restartCount,
-        pm2_status: "not_applicable — child runs in E2B sandbox, not PM2",
+        pm2_status: "not_applicable — child runs in E2B sandbox",
 
         // Lifecycle
         stateTimeline,

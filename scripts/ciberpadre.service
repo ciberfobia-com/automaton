@@ -1,0 +1,17 @@
+[Unit]
+Description=CiberPadre - Conway Automaton Runtime
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/automaton
+ExecStart=/usr/bin/node dist/index.js --run
+Restart=on-failure
+RestartSec=30
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

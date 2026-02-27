@@ -121,7 +121,7 @@ export class Orchestrator {
     ).run();
 
     // ─── Mark ghost local workers as stopped ───────────────────────────
-    // After a PM2 restart, local workers' in-memory processes are lost but
+    // After a process restart, local workers' in-memory processes are lost but
     // their DB records stay "running". Mark them as stopped if they have
     // no active tasks assigned and are local:// addresses.
     this.params.db.prepare(

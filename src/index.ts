@@ -368,9 +368,16 @@ async function run(): Promise<void> {
   logger.info(`[${new Date().toISOString()}] Heartbeat daemon started.`);
 
   // Handle graceful shutdown
-  const shutdown = () => {
+  // Collected shutdown hooks from subsystems (worker pool, etc.)
+  const shutdownHooks: Array<() => Promise<void>> = [];
+
+  const shutdown = async () => {
     logger.info(`[${new Date().toISOString()}] Shutting down...`);
     heartbeat.stop();
+    // Run subsystem shutdown hooks (e.g. abort local workers, reset tasks)
+    for (const hook of shutdownHooks) {
+      try { await hook(); } catch { /* best effort */ }
+    }
     db.setAgentState("sleeping");
     db.close();
     process.exit(0);
@@ -404,6 +411,7 @@ async function run(): Promise<void> {
         policyEngine,
         spendTracker,
         ollamaBaseUrl,
+        registerShutdownHook: (hook) => shutdownHooks.push(hook),
         onStateChange: (state: AgentState) => {
           logger.info(`[${new Date().toISOString()}] State: ${state}`);
         },
