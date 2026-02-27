@@ -419,9 +419,19 @@ DEPLOYMENT RULES (MANDATORY):
 - NEVER write files in /opt/automaton/ — that is the runtime source code
 - NEVER overwrite package.json, tsconfig.json, pnpm-lock.yaml at the project root
 - NEVER run pkill, killall, or kill -9 on broad patterns (e.g. pkill -f index.js)
-- To restart YOUR service, use: cd ~/services/<name> && node index.js &
+
+STARTING SERVICES (CRITICAL — read carefully):
+- ALWAYS start services with: cd ~/services/<name> && nohup node index.js > output.log 2>&1 &
+- NEVER use: node index.js & (this keeps stdout open and blocks exec forever)
+- After starting, wait briefly then check: sleep 1 && curl -s http://localhost:<port>/health
 - Include a health check endpoint (GET /health) in every service
-- After starting a service, verify it with curl http://localhost:<port>/health`;
+
+AVOIDING CONFLICTS WITH OTHER WORKERS:
+- Before creating a service directory, check if it already exists: ls ~/services/
+- If ~/services/<name>/ already exists, use a different name (append -v2, -alt, etc.)
+- Before picking a port, check what's in use: ss -tlnp | grep LISTEN
+- Use ports in range 3000-9000, avoid 4020 (dashboard)
+- NEVER kill or restart another worker's service`;
   }
 
   private buildTaskPrompt(task: TaskNode): string {
