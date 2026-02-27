@@ -578,6 +578,8 @@
                     <button class="btn ${window.__debugMinutes === 2 ? 'active' : ''}" onclick="window.__loadDebugLog(2)">Last 2 min</button>
                     <button class="btn ${window.__debugMinutes === 5 || !window.__debugMinutes ? 'active' : ''}" onclick="window.__loadDebugLog(5)">Last 5 min</button>
                     <button class="btn ${window.__debugMinutes === 10 ? 'active' : ''}" onclick="window.__loadDebugLog(10)">Last 10 min</button>
+                    <button class="btn ${window.__debugMinutes === 30 ? 'active' : ''}" onclick="window.__loadDebugLog(30)">Last 30 min</button>
+                    <button class="btn ${window.__debugMinutes === 60 ? 'active' : ''}" onclick="window.__loadDebugLog(60)">Last 1 hour</button>
                 </div>
                 <button class="btn" onclick="window.__copyDebugLog()" id="copyDebugBtn" style="display:${window.__debugLogText ? 'inline-flex' : 'none'}">📋 Copy to Clipboard</button>
             </div>`;
@@ -713,6 +715,96 @@
             }
             html += `</div>`;
             html += `<div style="margin-top:20px">${jsonBlock(data, "config-full")}</div>`;
+            return html;
+        },
+
+        // ══════════════════════════════════════════════════
+        //  SOCIAL — messaging, worker comms, inbox
+        // ══════════════════════════════════════════════════
+        async social() {
+            const data = await api("/social");
+            if (!data) return `<div class="empty">Unable to load social data</div>`;
+
+            let html = "";
+
+            // Stats cards
+            const s = data.stats || {};
+            html += `<div class="card-grid">
+                <div class="card"><div class="card-label">📬 Inbox Total</div><div class="card-value">${s.inbox_total || 0}</div></div>
+                <div class="card"><div class="card-label">⏳ Pending</div><div class="card-value" style="color:${s.inbox_pending > 0 ? 'var(--yellow)' : 'var(--green)'}">${s.inbox_pending || 0}</div></div>
+                <div class="card"><div class="card-label">📝 Worker Logs</div><div class="card-value">${s.worker_logs || 0}</div></div>
+                <div class="card"><div class="card-label">📡 Task Events</div><div class="card-value">${s.task_events || 0}</div></div>
+                <div class="card"><div class="card-label">🔗 Active Channels</div><div class="card-value">${s.active_channels || 0}</div></div>
+            </div>`;
+
+            // Communication channels
+            const channels = data.channels || [];
+            if (channels.length > 0) {
+                html += `<div class="section-header"><span class="section-title">🔗 Communication Channels</span></div>`;
+                html += makeTable([
+                    { label: "Name", key: "name", render: (r) => `<a href="#child/${r.address?.replace('local://', '')}" style="color:var(--accent)">${esc(r.name)}</a>` },
+                    { label: "Address", key: "address", render: (r) => `<span style="font-family:var(--mono);font-size:11px">${esc((r.address || "").slice(0, 30))}</span>` },
+                    { label: "Status", key: "status", render: (r) => statusBadge(r.status) },
+                    { label: "Role", key: "role", render: (r) => badge(r.role || "generalist", "blue") },
+                    { label: "Events", key: "event_count" },
+                    { label: "Last Activity", key: "last_activity", render: (r) => r.last_activity ? timeAgo(r.last_activity) : "—" },
+                ], channels);
+            }
+
+            // Worker event timeline (most important for debugging)
+            const events = data.workerEvents || [];
+            if (events.length > 0) {
+                html += `<div class="section-header" style="margin-top:24px"><span class="section-title">📡 Worker Event Stream (${events.length})</span></div>`;
+                html += `<div class="worker-timeline">`;
+                for (const ev of events.slice(0, 100)) {
+                    const content = ev.content || "";
+                    const evType = ev.type || "unknown";
+
+                    let icon = "📋", color = "var(--text-muted)", cls = "";
+                    if (evType === "task_completed") { icon = "✅"; color = "var(--green)"; cls = "success"; }
+                    else if (evType === "task_failed") { icon = "❌"; color = "var(--red)"; cls = "error"; }
+                    else if (evType === "task_assigned") { icon = "📤"; color = "var(--accent)"; cls = "spawn"; }
+                    else if (content.includes("SPAWNED")) { icon = "🚀"; color = "var(--accent)"; cls = "spawn"; }
+                    else if (content.includes("CLAIMED")) { icon = "✅"; color = "var(--green)"; cls = "success"; }
+                    else if (content.includes("FAILED") || content.includes("CRASHED") || content.includes("ERROR")) { icon = "❌"; color = "var(--red)"; cls = "error"; }
+                    else if (content.includes("Turn")) { icon = "🧠"; color = "#a78bfa"; cls = "inference"; }
+                    else if (content.includes("COMPLETED") || content.includes("DONE")) { icon = "🎉"; color = "var(--green)"; cls = "success"; }
+                    else if (content.includes("tool")) { icon = "🔧"; color = "#60a5fa"; cls = "tool"; }
+
+                    const workerName = (ev.agent_address || "").replace("local://", "").slice(-12);
+
+                    html += `<div class="wt-item ${cls}">
+                        <div class="wt-icon" style="color:${color}">${icon}</div>
+                        <div class="wt-body">
+                            <div class="wt-header">
+                                <span class="wt-turn-badge">${esc(workerName)}</span>
+                                <span class="wt-type" style="color:${color}">${esc(evType)}</span>
+                                <span class="wt-time">${timeAgo(ev.created_at)}</span>
+                            </div>
+                            <div class="wt-content">${esc(content.slice(0, 300))}</div>
+                        </div>
+                    </div>`;
+                }
+                html += `</div>`;
+            } else {
+                html += `<div class="empty" style="margin-top:24px">No worker events yet — workers haven't produced any logs</div>`;
+            }
+
+            // Inbox messages
+            const inbox = data.inbox || [];
+            if (inbox.length > 0) {
+                html += `<div class="section-header" style="margin-top:24px"><span class="section-title">📬 Inbox Messages (${inbox.length})</span></div>`;
+                html += makeTable([
+                    { label: "From", key: "from_address", render: (r) => `<span style="font-family:var(--mono);font-size:11px">${esc((r.from_address || "").slice(0, 20))}</span>` },
+                    { label: "To", key: "to_address", render: (r) => r.to_address ? `<span style="font-family:var(--mono);font-size:11px">${esc(r.to_address.slice(0, 20))}</span>` : "—" },
+                    { label: "Status", key: "status", render: (r) => statusBadge(r.status || "received") },
+                    { label: "Content", key: "content", render: (r) => esc((r.content || "").slice(0, 100)) },
+                    { label: "Received", key: "received_at", render: (r) => timeAgo(r.received_at) },
+                ], inbox);
+            } else {
+                html += `<div class="empty" style="margin-top:24px">No inbox messages</div>`;
+            }
+
             return html;
         },
 
@@ -892,17 +984,53 @@
 
     function renderChildTurns(d) {
         let h = "";
+
+        // ── Visual Event Timeline ──
         if (d.events?.length > 0) {
-            h += `<div class="section-header"><span class="section-title">Events (${d.events.length})</span></div>`;
-            h += makeTable([
-                { label: "Type", key: "type", render: (r) => badge(r.type, "blue") },
-                { label: "Content", key: "content", render: (r) => esc((r.content || "").slice(0, 120)) },
-                { label: "Tokens", key: "token_count" },
-                { label: "Time", key: "created_at", render: (r) => timeAgo(r.created_at) },
-            ], d.events);
+            h += `<div class="section-header"><span class="section-title">📡 Activity Timeline (${d.events.length})</span></div>`;
+            h += `<div class="worker-timeline">`;
+            for (const ev of d.events) {
+                const content = ev.content || "";
+                const evType = ev.type || "unknown";
+
+                // Classify event for styling
+                let icon = "📋", color = "var(--text-muted)", cls = "";
+                if (content.includes("SPAWNED")) { icon = "🚀"; color = "var(--accent)"; cls = "spawn"; }
+                else if (content.includes("CLAIMED")) { icon = "✅"; color = "var(--green)"; cls = "success"; }
+                else if (content.includes("INFERENCE FAILED") || content.includes("CLAIM FAILED") || content.includes("ERROR") || content.includes("error")) { icon = "❌"; color = "var(--red)"; cls = "error"; }
+                else if (content.includes("Turn") && content.includes("calling inference")) { icon = "🧠"; color = "#a78bfa"; cls = "inference"; }
+                else if (content.includes("tool") || content.includes("exec") || content.includes("write_file") || content.includes("read_file")) { icon = "🔧"; color = "#60a5fa"; cls = "tool"; }
+                else if (content.includes("COMPLETE") || content.includes("SUCCESS")) { icon = "🎉"; color = "var(--green)"; cls = "success"; }
+                else if (evType === "worker_log") { icon = "📝"; color = "var(--text-muted)"; cls = "log"; }
+
+                // Parse turn number from content
+                const turnMatch = content.match(/Turn (\d+)\/(\d+)/);
+                const turnLabel = turnMatch ? `<span class="wt-turn-badge">T${turnMatch[1]}/${turnMatch[2]}</span>` : "";
+
+                // Format content for display
+                let displayContent = content;
+                // Strip redundant prefixes
+                displayContent = displayContent.replace(/^(SPAWNED|CLAIMED|Turn \d+\/\d+)\s*[-—]\s*/, "");
+
+                h += `<div class="wt-item ${cls}">
+                    <div class="wt-icon" style="color:${color}">${icon}</div>
+                    <div class="wt-body">
+                        <div class="wt-header">
+                            ${turnLabel}
+                            <span class="wt-type" style="color:${color}">${esc(evType)}</span>
+                            <span class="wt-time">${timeAgo(ev.created_at)}</span>
+                        </div>
+                        <div class="wt-content">${esc(displayContent.slice(0, 300))}</div>
+                        ${ev.token_count ? `<div class="wt-tokens">${ev.token_count} tokens</div>` : ""}
+                    </div>
+                </div>`;
+            }
+            h += `</div>`;
         }
+
+        // ── Tasks section ──
         if (d.tasks?.length > 0) {
-            h += `<div class="section-header" style="margin-top:24px"><span class="section-title">Tasks</span></div>`;
+            h += `<div class="section-header" style="margin-top:24px"><span class="section-title">📋 Assigned Tasks</span></div>`;
             h += makeTable([
                 { label: "Title", key: "title" },
                 { label: "Status", key: "status", render: (r) => statusBadge(r.status) },
@@ -916,11 +1044,33 @@
     function renderChildLogs(data) {
         if (!data) return `<div class="empty">Unable to load logs</div>`;
         if (!data.available) return `<div class="card" style="background:var(--bg-input)"><div class="card-label">📄 Logs</div><div class="card-sub">${esc(data.message || "Logs unavailable")}</div></div>`;
-        let h = `<div class="card-sub" style="margin-bottom:12px">Source: <strong>${esc(data.path)}</strong> · ${data.totalMatches} lines</div>`;
+        let h = `<div class="card-sub" style="margin-bottom:12px">Source: <strong>${esc(data.source)}</strong> · ${data.totalMatches} matches</div>`;
         if (data.lines.length === 0) return h + `<div class="empty">No log entries found</div>`;
-        h += `<div class="log-viewer">`;
+
+        h += `<div class="worker-log-viewer">`;
         for (const line of data.lines) {
-            h += `<div class="log-line">${line.timestamp ? `<span class="log-ts">[${esc(line.timestamp)}]</span> ` : ""}${esc(line.raw)}</div>`;
+            // Try to parse JSON log entries
+            let parsed = null;
+            const jsonMatch = (line.raw || "").match(/\{.*"message".*\}/);
+            if (jsonMatch) {
+                try { parsed = JSON.parse(jsonMatch[0]); } catch { /* not JSON */ }
+            }
+
+            if (parsed) {
+                const lvl = parsed.level || "info";
+                const lvlColor = lvl === "error" ? "var(--red)" : lvl === "warn" ? "var(--yellow)" : "var(--text-muted)";
+                const msg = parsed.message || "";
+                const mod = parsed.module || "";
+
+                h += `<div class="wlog-entry ${lvl === "error" ? "wlog-error" : lvl === "warn" ? "wlog-warn" : ""}">
+                    <span class="wlog-time">${esc(parsed.timestamp ? parsed.timestamp.slice(11, 19) : "")}</span>
+                    <span class="wlog-level" style="color:${lvlColor}">${esc(lvl.toUpperCase())}</span>
+                    ${mod ? `<span class="wlog-module">${esc(mod)}</span>` : ""}
+                    <span class="wlog-msg">${esc(msg.slice(0, 200))}</span>
+                </div>`;
+            } else {
+                h += `<div class="wlog-entry"><span class="wlog-time">${line.timestamp ? esc(line.timestamp.slice(11, 19)) : ""}</span><span class="wlog-msg">${esc((line.raw || "").slice(0, 200))}</span></div>`;
+            }
         }
         return h + `</div>`;
     }
@@ -1037,6 +1187,7 @@
             heartbeat: "Heartbeat",
             soul: "Soul",
             config: "Config",
+            social: "Social",
             childDetail: "Child Detail",
             conway_cloud: "Conway Cloud",
         };

@@ -53,6 +53,7 @@ const logger = createLogger("orchestration.local-worker");
 const MAX_TURNS = 25;
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 const INFERENCE_TIMEOUT_MS = 60_000; // Per-call timeout for inference API
+const INFERENCE_MAX_RETRIES = 1; // Retry once on inference failure
 
 // Minimal inference interface — works with both UnifiedInferenceClient and
 // an adapter around the main agent's InferenceClient.
@@ -221,18 +222,32 @@ export class LocalWorkerPool {
       this.workerLog(workerId, task, `Turn ${turn + 1}/${maxTurns} — calling inference`);
 
       let response;
-      try {
-        response = await this.chatWithTimeout({
-          tier: "fast",
-          messages: messages as any,
-          tools: toolDefs,
-          toolChoice: "auto",
-        });
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        logger.error(`[WORKER ${workerId}] Inference failed on turn ${turn + 1}`, error instanceof Error ? error : new Error(msg));
-        this.workerLog(workerId, task, `INFERENCE FAILED on turn ${turn + 1}: ${msg}`);
-        failTask(this.config.db, task.id, `Inference failed: ${msg}`, true);
+      let lastError: string | null = null;
+      for (let attempt = 0; attempt <= INFERENCE_MAX_RETRIES; attempt++) {
+        try {
+          if (attempt > 0) {
+            logger.info(`[WORKER ${workerId}] Retrying inference (attempt ${attempt + 1})`);
+            this.workerLog(workerId, task, `Retrying inference (attempt ${attempt + 1})`);
+            await new Promise(r => setTimeout(r, 3000)); // wait 3s before retry
+          }
+          response = await this.chatWithTimeout({
+            tier: "fast",
+            messages: messages as any,
+            tools: toolDefs,
+            toolChoice: "auto",
+          });
+          lastError = null;
+          break; // success
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+          logger.warn(`[WORKER ${workerId}] Inference attempt ${attempt + 1} failed: ${lastError}`);
+          this.workerLog(workerId, task, `INFERENCE attempt ${attempt + 1} failed: ${lastError}`);
+        }
+      }
+      if (!response || lastError) {
+        logger.error(`[WORKER ${workerId}] Inference failed on turn ${turn + 1} after ${INFERENCE_MAX_RETRIES + 1} attempts`, new Error(lastError ?? "unknown"));
+        this.workerLog(workerId, task, `INFERENCE FAILED on turn ${turn + 1}: ${lastError}`);
+        failTask(this.config.db, task.id, `Inference failed: ${lastError}`, true);
         this.updateWorkerChildStatus(workerAddress, "failed");
         return;
       }
