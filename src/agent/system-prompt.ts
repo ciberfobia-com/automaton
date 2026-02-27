@@ -517,7 +517,8 @@ export function getOrchestratorStatus(db: Database.Database): string {
       `Tasks: ${completedTasks}/${totalTasks} completed, ${pendingTasks} pending, ${blockedTasks} blocked`,
     ];
 
-    // Inject failure warning when all goals have failed and none completed
+    // Inject failure warning when RECENT goals have failed and none ever completed.
+    // Only counts failures in the last 2 hours — old failures may be from bugs now fixed.
     const failedGoalsRow = db
       .prepare("SELECT COUNT(*) AS count FROM goals WHERE status = 'failed'")
       .get() as { count: number } | undefined;
@@ -527,12 +528,17 @@ export function getOrchestratorStatus(db: Database.Database): string {
     const failedGoals = failedGoalsRow?.count ?? 0;
     const completedGoals = completedGoalsRow?.count ?? 0;
 
-    if (completedGoals === 0 && failedGoals >= 2) {
+    const recentFailedRow = db
+      .prepare(`SELECT COUNT(*) AS count FROM goals WHERE status = 'failed'
+         AND COALESCE(completed_at, created_at) > ?`)
+      .get(new Date(Date.now() - 2 * 60 * 60_000).toISOString()) as { count: number } | undefined;
+    const recentFailed = recentFailedRow?.count ?? 0;
+
+    if (completedGoals === 0 && recentFailed >= 3) {
       lines.push("");
-      lines.push(`⚠ CRITICAL: ${failedGoals} goals have FAILED and you have NEVER completed a single goal.`);
-      lines.push("DO NOT create more goals — they will fail the same way.");
-      lines.push("GO TO SLEEP immediately. Wait for your creator to diagnose the issue.");
-      lines.push("Creating goals when workers cannot execute them wastes credits.");
+      lines.push(`⚠ WARNING: ${recentFailed} goals failed in the last 2 hours (${failedGoals} total all-time).`);
+      lines.push("Consider trying a SIMPLER goal or a completely different approach.");
+      lines.push("Start with the simplest possible task to prove the system works.");
     }
 
     return lines.join("\n");

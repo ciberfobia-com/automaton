@@ -2451,32 +2451,28 @@ Model: ${ctx.inference.getDefaultModel()}
           `SELECT COUNT(*) AS c FROM goals WHERE status = 'completed'`,
         ).get() as { c: number })?.c ?? 0;
 
-        if (everCompleted === 0 && recentFailedCount >= 2) {
-          // Force sleep — don't rely on the agent obeying the text
+        if (everCompleted === 0 && recentFailedCount >= 5) {
+          // Slow down — force a short sleep to prevent rapid goal churn
           try {
-            ctx.db.setKV("sleep_until", new Date(Date.now() + 10 * 60_000).toISOString());
+            ctx.db.setKV("sleep_until", new Date(Date.now() + 3 * 60_000).toISOString());
             ctx.db.raw.prepare("UPDATE kv SET value = ? WHERE key = 'agent_state'")
               .run("sleeping");
           } catch { /* best effort */ }
           return (
             `BLOCKED: ${recentFailedCount} goals have failed in the last 2 hours and you have NEVER completed a goal.\n` +
-            `Creating more goals will just repeat the same failures and waste credits.\n\n` +
-            `ACTION REQUIRED: STOP creating goals. Go to sleep for at least 30 minutes.\n` +
-            `When you wake up, analyze WHY goals fail and try a fundamentally different, simpler approach.\n` +
-            `Consider: the simplest possible task, like writing a file or running a command.`
+            `Please wait 3 minutes and then try a SIMPLER approach.\n` +
+            `Start with the simplest possible task: write a file, run a command, or create a basic HTTP endpoint.`
           );
         }
 
-        if (recentFailedCount >= 3) {
-          // Force sleep — don't rely on the agent obeying the text
+        if (recentFailedCount >= 5) {
+          // Slow down — force a short sleep to prevent rapid goal churn
           try {
-            ctx.db.setKV("sleep_until", new Date(Date.now() + 15 * 60_000).toISOString());
+            ctx.db.setKV("sleep_until", new Date(Date.now() + 5 * 60_000).toISOString());
           } catch { /* best effort */ }
           return (
             `BLOCKED: ${recentFailedCount} goals have failed in the last 2 hours.\n` +
-            `Creating more goals will just repeat the same failures and waste credits.\n\n` +
-            `ACTION REQUIRED: STOP creating goals. Go to sleep for at least 15 minutes.\n` +
-            `When you wake up, try a completely different, simpler approach.`
+            `Please wait 5 minutes and try a simpler approach.`
           );
         }
 
