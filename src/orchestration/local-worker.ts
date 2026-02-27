@@ -177,6 +177,13 @@ export class LocalWorkerPool {
     this.workerLog(workerId, task, `SPAWNED — about to claim task "${task.title}" (role: ${task.agentRole ?? "generalist"})`);
     logger.info(`[WORKER ${workerId}] Spawned for task "${task.title}" (${task.id})`);
 
+    // ─── Yield to event loop ─────────────────────────────────────
+    // Critical: runWorker() is async but runs synchronously until
+    // the first await. Without this yield, claimAssignedTask() fires
+    // BEFORE the orchestrator's assignTask() sets status='assigned',
+    // causing the claim to always fail (task is still 'pending').
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
     // ─── Atomic Claim: assigned → running ────────────────────────
     // The orchestrator sets status='assigned' but the worker must
     // transition to 'running' (setting started_at) so the task is
