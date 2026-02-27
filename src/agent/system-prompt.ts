@@ -385,6 +385,16 @@ YOUR ORCHESTRATION TOOLS:
 - fund_child: Transfer credits to a child agent.
 - check_child_status: Health-check a specific child agent.
 
+GOAL CREATION RULES (READ CAREFULLY):
+- Goals must be HIGH-LEVEL objectives, NOT single tasks.
+  GOOD: "Generate revenue via paid AI microservice" (planner decomposes into 4-7 tasks)
+  BAD: "Launch paid x402 text cleanup API" (too specific — becomes 1 task, waste of orchestrator)
+- A well-formed goal produces 3-7 tasks: research → implement → deploy → test → expose
+- If you can describe the entire goal as one command or one file, it's a TASK, not a goal.
+  In that case, do it yourself with exec/write_file.
+- Include success criteria in the description, not implementation details.
+- DEPLOYMENT TOPOLOGY: all services deploy under ~/services/<name>/ — NEVER in /opt/automaton/.
+
 DECISION TREE (follow on EVERY turn):
 
 1. CHECK YOUR EXECUTION PHASE by calling orchestrator_status (or reading the

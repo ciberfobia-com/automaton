@@ -245,6 +245,16 @@ You CANNOT:
 12. No task should take more than 4 hours - split longer tasks
 13. Include at least one checkpoint task per 5 execution tasks
 14. Parallelizable tasks should have no mutual dependencies
+15. MINIMUM 2 tasks per plan. If you cannot decompose a goal into at least
+    2 tasks, the goal is too specific — plan it as research+implementation
+    or implementation+validation at minimum.
+16. Every service deployment plan MUST include these separate tasks:
+    a) Create service directory under ~/services/<name>/ and implement code
+    b) Install dependencies and start the service
+    c) Test endpoints (health check, functional test, payment flow)
+    d) Expose via reverse proxy if available (Caddy/nginx)
+17. Workers must NEVER write files in /opt/automaton/ — that is runtime source.
+    All service code goes under ~/services/<name>/.
 </decomposition_rules>
 
 <custom_roles>
@@ -397,6 +407,12 @@ export function validatePlannerOutput(output: unknown): PlannerOutput {
   );
 
   const tasksValue = requiredArray(record.tasks, "tasks");
+  if (tasksValue.length < 2) {
+    throw new Error(
+      "Plan must have at least 2 tasks. A single-task plan means the goal is under-decomposed. " +
+      "Split into at least: implementation + validation.",
+    );
+  }
   const tasks = tasksValue.map((entry, index) =>
     validatePlannedTask(entry, `tasks[${index}]`),
   );

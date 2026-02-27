@@ -411,7 +411,17 @@ RULES:
 - If you cannot complete the task, explain why in your final message.
 - Do NOT call tools after you are done. Just give your final text response.
 - Be efficient. Minimize unnecessary tool calls.
-- You have a limited number of turns. Do not waste them.`;
+- You have a limited number of turns. Do not waste them.
+
+DEPLOYMENT RULES (MANDATORY):
+- Deploy ALL service files under ~/services/<service-name>/
+- Each service gets its own subdirectory with its own package.json
+- NEVER write files in /opt/automaton/ — that is the runtime source code
+- NEVER overwrite package.json, tsconfig.json, pnpm-lock.yaml at the project root
+- NEVER run pkill, killall, or kill -9 on broad patterns (e.g. pkill -f index.js)
+- To restart YOUR service, use: cd ~/services/<name> && node index.js &
+- Include a health check endpoint (GET /health) in every service
+- After starting a service, verify it with curl http://localhost:<port>/health`;
   }
 
   private buildTaskPrompt(task: TaskNode): string {
@@ -449,6 +459,23 @@ RULES:
           const command = args.command as string;
           const timeoutMs = typeof args.timeout_ms === "number" ? args.timeout_ms : 30_000;
 
+          // Block dangerous commands that could kill the parent process or damage the system
+          const dangerousPatterns = [
+            /pkill\s+(-f\s+)?.*index\.js/i,
+            /pkill\s+(-f\s+)?.*dist/i,
+            /pkill\s+(-f\s+)?.*node/i,
+            /killall\s+node/i,
+            /kill\s+-9\s+/,
+            /rm\s+-rf\s+\/(?!root\/services)/,
+            /systemctl\s+(stop|restart|disable)\s+ciberpadre/i,
+            /pm2\s+(stop|delete|kill)/i,
+          ];
+          for (const pattern of dangerousPatterns) {
+            if (pattern.test(command)) {
+              return `BLOCKED: Command rejected — dangerous pattern detected. Do not kill parent processes or remove system directories. Use 'cd ~/services/<name> && node index.js &' to start your service.`;
+            }
+          }
+
           // Try Conway API first, fall back to local shell
           try {
             const result = await this.config.conway.exec(command, timeoutMs);
@@ -481,6 +508,29 @@ RULES:
         execute: async (args) => {
           const filePath = args.path as string;
           const content = args.content as string;
+
+          // Block writes to automaton source directories
+          const resolvedPath = filePath.startsWith("/") ? filePath : `${process.cwd()}/${filePath}`;
+          const protectedPrefixes = [
+            "/opt/automaton/src/",
+            "/opt/automaton/dist/",
+            "/opt/automaton/apps/",
+            "/opt/automaton/packages/",
+            "/opt/automaton/node_modules/",
+          ];
+          const protectedFiles = [
+            "package.json", "tsconfig.json", "pnpm-lock.yaml",
+            "pnpm-workspace.yaml", "vitest.config.ts", ".gitignore",
+          ];
+          for (const prefix of protectedPrefixes) {
+            if (resolvedPath.startsWith(prefix)) {
+              return `BLOCKED: Cannot write to ${prefix} — this is the automaton runtime source code. Deploy services under ~/services/<name>/ instead.`;
+            }
+          }
+          const basename = filePath.split("/").pop() ?? "";
+          if (protectedFiles.includes(basename) && (resolvedPath.startsWith("/opt/automaton/") || !filePath.includes("/"))) {
+            return `BLOCKED: Cannot overwrite ${basename} — this is a protected project file. Create your own package.json under ~/services/<name>/ instead.`;
+          }
 
           try {
             await this.config.conway.writeFile(filePath, content);
