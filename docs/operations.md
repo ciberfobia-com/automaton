@@ -2,6 +2,18 @@
 
 Guía completa para levantar, mantener y actualizar CiberPadre (runtime + dashboard) en un VPS Linux con `systemd`.
 
+
+## DESPLEGAR CAMBIOS DEL TIRON
+
+```bash
+cd /opt/automaton
+git pull
+pnpm install
+pnpm build
+sudo bash scripts/install-services.sh
+sudo systemctl restart ciberpadre ciberpadre-dashboard
+```
+
 ## Prerrequisitos
 
 ```bash

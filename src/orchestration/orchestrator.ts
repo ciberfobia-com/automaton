@@ -606,48 +606,60 @@ export class Orchestrator {
     // Recover stale tasks: workers that died (process restart, sandbox crash)
     // leave tasks stuck in 'assigned' forever. Detect and reset them.
     // Track recovery attempts per task to prevent infinite recover-assign loops.
+    // Note: local workers ARE included here. A 3-minute age guard prevents
+    // the #233 infinite assign-reset loop for tasks that were just assigned.
     if (this.params.isWorkerAlive) {
       const assignedTasks = getTasksByGoal(this.params.db, goal.id)
-        .filter((t) => t.status === "assigned" && t.assignedTo
-          && !t.assignedTo.startsWith("local://"));
+        .filter((t) => t.status === "assigned" && t.assignedTo);
       for (const task of assignedTasks) {
         const alive = this.params.isWorkerAlive(task.assignedTo!);
-        if (!alive) {
-          const staleKey = `orchestrator.stale_count.${task.id}`;
-          const staleRow = this.params.db.prepare(
-            "SELECT value FROM kv WHERE key = ?",
-          ).get(staleKey) as { value: string } | undefined;
-          const staleCount = staleRow ? parseInt(staleRow.value, 10) || 0 : 0;
-          const maxRecoveries = task.maxRetries ?? 3;
+        if (alive) continue;
 
-          if (staleCount >= maxRecoveries) {
-            logger.error("Task exceeded max stale recoveries, marking failed", undefined, {
-              taskId: task.id,
-              worker: task.assignedTo,
-              staleCount,
-              maxRecoveries,
-            });
-            try {
-              failTask(this.params.db, task.id, `Worker died ${staleCount} times — task abandoned`, false);
-            } catch { /* task may already be in terminal state */ }
-            this.params.db.prepare("DELETE FROM kv WHERE key = ?").run(staleKey);
-            continue;
-          }
+        // For local workers, skip recovery if the task was assigned recently
+        // (< 3 minutes) to avoid the #233 infinite assign-reset loop.
+        // The worker may still be starting up or running its first inference call.
+        if (task.assignedTo!.startsWith("local://")) {
+          const assignedAt = task.startedAt || task.createdAt;
+          const taskAgeMs = assignedAt
+            ? Date.now() - new Date(assignedAt).getTime()
+            : 0;
+          if (taskAgeMs < 180_000) continue;
+        }
 
-          this.params.db.prepare(
-            "INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, datetime('now'))",
-          ).run(staleKey, String(staleCount + 1));
+        const staleKey = `orchestrator.stale_count.${task.id}`;
+        const staleRow = this.params.db.prepare(
+          "SELECT value FROM kv WHERE key = ?",
+        ).get(staleKey) as { value: string } | undefined;
+        const staleCount = staleRow ? parseInt(staleRow.value, 10) || 0 : 0;
+        const maxRecoveries = task.maxRetries ?? 3;
 
-          logger.warn("Recovering stale task from dead worker", {
+        if (staleCount >= maxRecoveries) {
+          logger.error("Task exceeded max stale recoveries, marking failed", undefined, {
             taskId: task.id,
             worker: task.assignedTo,
-            attempt: staleCount + 1,
+            staleCount,
             maxRecoveries,
           });
-          this.params.db.prepare(
-            "UPDATE task_graph SET status = 'pending', assigned_to = NULL, started_at = NULL WHERE id = ?",
-          ).run(task.id);
+          try {
+            failTask(this.params.db, task.id, `Worker died ${staleCount} times — task abandoned`, false);
+          } catch { /* task may already be in terminal state */ }
+          this.params.db.prepare("DELETE FROM kv WHERE key = ?").run(staleKey);
+          continue;
         }
+
+        this.params.db.prepare(
+          "INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+        ).run(staleKey, String(staleCount + 1));
+
+        logger.warn("Recovering stale task from dead worker", {
+          taskId: task.id,
+          worker: task.assignedTo,
+          attempt: staleCount + 1,
+          maxRecoveries,
+        });
+        this.params.db.prepare(
+          "UPDATE task_graph SET status = 'pending', assigned_to = NULL, started_at = NULL WHERE id = ?",
+        ).run(task.id);
       }
     }
 

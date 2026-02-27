@@ -338,18 +338,26 @@ router.get("/diagnostics/snapshot", (_req, res) => {
     `, [cutoff]);
     if (workerLogs.length === 0) {
         lines.push("No worker activity in window");
-        // Show ALL worker logs (no time filter) for context
-        const allLogs = safeAll(`
-            SELECT agent_address, task_id, content, created_at
+        // Show most recent logs GROUPED BY WORKER (max 3 per worker)
+        const recentLogs = safeAll(`
+            SELECT agent_address, content, created_at
             FROM event_stream
             WHERE type = 'worker_log'
-            ORDER BY created_at DESC LIMIT 20
+            ORDER BY created_at DESC LIMIT 50
         `);
-        if (allLogs.length > 0) {
-            lines.push(`  (showing ${allLogs.length} most recent logs from all time):`);
-            for (const wl of allLogs) {
-                const workerId = (wl.agent_address || "").replace("local://", "").slice(-6);
-                lines.push(`    [${workerId}] ${(wl.content || "").slice(0, 120)} ts=${wl.created_at}`);
+        if (recentLogs.length > 0) {
+            const grouped = {};
+            for (const wl of recentLogs) {
+                const addr = wl.agent_address || "unknown";
+                if (!grouped[addr]) grouped[addr] = [];
+                if (grouped[addr].length < 3) grouped[addr].push(wl);
+            }
+            lines.push(`  (showing recent logs per worker from all time):`);
+            for (const [addr, logs] of Object.entries(grouped)) {
+                const workerId = addr.replace("local://", "").slice(-6);
+                for (const wl of logs) {
+                    lines.push(`    [${workerId}] ${(wl.content || "").slice(0, 120)} ts=${wl.created_at}`);
+                }
             }
         }
     } else {
