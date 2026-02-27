@@ -15,7 +15,10 @@ router.get("/children/:id/details", (req, res) => {
     const { id } = req.params;
 
     // ── Core metadata ──────────────────────────────────
-    const child = db.safeGet("SELECT * FROM children WHERE id = ?", [id]);
+    // Support lookup by id, sandbox_id, or address
+    let child = db.safeGet("SELECT * FROM children WHERE id = ?", [id]);
+    if (!child) child = db.safeGet("SELECT * FROM children WHERE sandbox_id = ?", [id]);
+    if (!child) child = db.safeGet("SELECT * FROM children WHERE address = ? OR address = ?", [id, `local://${id}`]);
     if (!child) {
         return res.status(404).json({ error: "Child not found", id });
     }

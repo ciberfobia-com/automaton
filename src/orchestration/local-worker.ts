@@ -51,7 +51,7 @@ async function localReadFile(filePath: string): Promise<string> {
 const logger = createLogger("orchestration.local-worker");
 
 const MAX_TURNS = 25;
-const DEFAULT_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 const INFERENCE_TIMEOUT_MS = 60_000; // Per-call timeout for inference API
 const INFERENCE_MAX_RETRIES = 1; // Retry once on inference failure
 
@@ -220,6 +220,15 @@ export class LocalWorkerPool {
 
       logger.info(`[WORKER ${workerId}] Turn ${turn + 1}/${maxTurns} — calling inference (tier: fast)`);
       this.workerLog(workerId, task, `Turn ${turn + 1}/${maxTurns} — calling inference`);
+
+      // Heartbeat: update last_checked every 3 turns so dashboard sees worker is alive
+      if (turn % 3 === 0) {
+        try {
+          this.config.db.prepare(
+            `UPDATE children SET last_checked = ? WHERE address = ?`,
+          ).run(new Date().toISOString(), workerAddress);
+        } catch { /* best-effort */ }
+      }
 
       let response;
       let lastError: string | null = null;

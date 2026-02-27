@@ -30,9 +30,16 @@ router.get("/workers", (_req, res) => {
             SELECT MAX(created_at) as t FROM child_ledger WHERE address = ?
         `, [c.address || ""]);
 
+        // Also check event_stream for worker_log entries (local workers use this)
+        const lastWorkerLog = safeGet(`
+            SELECT MAX(created_at) as t FROM event_stream
+            WHERE type = 'worker_log' AND agent_address = ?
+        `, [c.address || ""]);
+
         const lastCheckedMs = c.last_checked ? new Date(c.last_checked).getTime() : 0;
         const lastLedgerMs = lastLedger?.t ? new Date(lastLedger.t).getTime() : 0;
-        const lastSignal = Math.max(lastCheckedMs, lastLedgerMs);
+        const lastLogMs = lastWorkerLog?.t ? new Date(lastWorkerLog.t).getTime() : 0;
+        const lastSignal = Math.max(lastCheckedMs, lastLedgerMs, lastLogMs);
         const silenceMs = lastSignal > 0 ? now - lastSignal : -1;
 
         // Spend

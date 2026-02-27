@@ -72,7 +72,10 @@ router.get("/health/derived", (_req, res) => {
 
         const lastCheckedMs = c.last_checked ? new Date(c.last_checked).getTime() : 0;
         const lastActMs = lastActivity?.last_act ? new Date(lastActivity.last_act).getTime() : 0;
-        const lastSignal = Math.max(lastCheckedMs, lastActMs);
+        // Also check event_stream for worker_log entries (local workers use this)
+        const lastWorkerLog = safeGet(`SELECT MAX(created_at) as t FROM event_stream WHERE type = 'worker_log' AND agent_address = ?`, [c.address || ""]);
+        const lastLogMs = lastWorkerLog?.t ? new Date(lastWorkerLog.t).getTime() : 0;
+        const lastSignal = Math.max(lastCheckedMs, lastActMs, lastLogMs);
         const silenceMs = lastSignal > 0 ? now - lastSignal : now;
 
         // Assigned tasks for this worker

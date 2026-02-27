@@ -138,12 +138,16 @@ router.get("/children/:id/logs", (req, res) => {
     const maxLines = Math.min(parseInt(req.query.lines || "200", 10), 500);
 
     // Get child metadata for additional search terms
-    const child = db.safeGet("SELECT * FROM children WHERE id = ?", [id]);
+    let child = db.safeGet("SELECT * FROM children WHERE id = ?", [id]);
+    if (!child) child = db.safeGet("SELECT * FROM children WHERE sandbox_id = ?", [id]);
+    if (!child) child = db.safeGet("SELECT * FROM children WHERE address = ? OR address = ?", [id, `local://${id}`]);
     const searchTerms = [id];
     if (child) {
+        // sandbox_id is the unique worker identifier (e.g. local-worker-01KJEN...)
         if (child.sandbox_id) searchTerms.push(child.sandbox_id);
-        if (child.name) searchTerms.push(child.name);
-        if (child.address) searchTerms.push(child.address.slice(0, 12));
+        // Full address for exact matching (don't slice — slicing to 12 chars
+        // matches "local://loca" which hits ALL local workers)
+        if (child.address) searchTerms.push(child.address);
     }
 
     // Try journalctl first, fall back to log files

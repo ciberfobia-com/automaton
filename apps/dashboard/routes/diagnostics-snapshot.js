@@ -156,7 +156,12 @@ router.get("/diagnostics/snapshot", (_req, res) => {
     } else {
         lines.push(`Total: ${children.length}`);
         for (const c of children) {
-            const lastCheckedAge = c.last_checked ? Math.floor((now - new Date(c.last_checked).getTime()) / 60000) : null;
+            const lastCheckedMs = c.last_checked ? new Date(c.last_checked).getTime() : 0;
+            // Also check event_stream for recent worker_log entries (same fix as workers.js)
+            const lastWorkerLog = safeGet(`SELECT MAX(created_at) as t FROM event_stream WHERE type = 'worker_log' AND agent_address = ?`, [c.address || ""]);
+            const lastLogMs = lastWorkerLog?.t ? new Date(lastWorkerLog.t).getTime() : 0;
+            const lastSignal = Math.max(lastCheckedMs, lastLogMs);
+            const lastCheckedAge = lastSignal > 0 ? Math.floor((now - lastSignal) / 60000) : null;
             const createdAge = Math.floor((now - new Date(c.created_at).getTime()) / 60000);
             const isLocal = c.address?.startsWith("local://");
             const runtime = isLocal ? "local" : "cloud";

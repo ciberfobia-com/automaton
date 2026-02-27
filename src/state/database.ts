@@ -387,9 +387,22 @@ export function createDatabase(dbPath: string): AutomatonDatabase {
   };
 
   const getChildById = (id: string): ChildAutomaton | undefined => {
-    const row = db
+    // Primary lookup by ID
+    let row = db
       .prepare("SELECT * FROM children WHERE id = ?")
       .get(id) as any | undefined;
+    // Fallback: search by sandbox_id (local workers use this as their identifier)
+    if (!row) {
+      row = db
+        .prepare("SELECT * FROM children WHERE sandbox_id = ?")
+        .get(id) as any | undefined;
+    }
+    // Fallback: search by address (e.g. "local://local-worker-...")
+    if (!row) {
+      row = db
+        .prepare("SELECT * FROM children WHERE address = ? OR address = ?")
+        .get(id, `local://${id}`) as any | undefined;
+    }
     return row ? deserializeChild(row) : undefined;
   };
 

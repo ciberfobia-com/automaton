@@ -8,7 +8,9 @@ router.get("/children", (_req, res) => {
 });
 
 router.get("/children/:id", (req, res) => {
-    const child = db.safeGet("SELECT * FROM children WHERE id = ?", [req.params.id]);
+    let child = db.safeGet("SELECT * FROM children WHERE id = ?", [req.params.id]);
+    if (!child) child = db.safeGet("SELECT * FROM children WHERE sandbox_id = ?", [req.params.id]);
+    if (!child) child = db.safeGet("SELECT * FROM children WHERE address = ? OR address = ?", [req.params.id, `local://${req.params.id}`]);
     if (!child) {
         return res.status(404).json({ error: "Child not found" });
     }
