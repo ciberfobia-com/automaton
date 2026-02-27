@@ -416,7 +416,7 @@ RULES:
 DEPLOYMENT RULES (MANDATORY):
 - Deploy ALL service files under ~/services/<service-name>/
 - Each service gets its own subdirectory with its own package.json
-- NEVER write files in /opt/automaton/ — that is the runtime source code
+- NEVER write files in the automaton's own directory (where dist/, src/, apps/ live)
 - NEVER overwrite package.json, tsconfig.json, pnpm-lock.yaml at the project root
 - NEVER run pkill, killall, or kill -9 on broad patterns (e.g. pkill -f index.js)
 
@@ -521,13 +521,9 @@ AVOIDING CONFLICTS WITH OTHER WORKERS:
 
           // Block writes to automaton source directories
           const resolvedPath = filePath.startsWith("/") ? filePath : `${process.cwd()}/${filePath}`;
-          const protectedPrefixes = [
-            "/opt/automaton/src/",
-            "/opt/automaton/dist/",
-            "/opt/automaton/apps/",
-            "/opt/automaton/packages/",
-            "/opt/automaton/node_modules/",
-          ];
+          const cwd = process.cwd();
+          const protectedSubdirs = ["src", "dist", "apps", "packages", "node_modules"];
+          const protectedPrefixes = protectedSubdirs.map(d => `${cwd}/${d}/`);
           const protectedFiles = [
             "package.json", "tsconfig.json", "pnpm-lock.yaml",
             "pnpm-workspace.yaml", "vitest.config.ts", ".gitignore",
@@ -538,7 +534,7 @@ AVOIDING CONFLICTS WITH OTHER WORKERS:
             }
           }
           const basename = filePath.split("/").pop() ?? "";
-          if (protectedFiles.includes(basename) && (resolvedPath.startsWith("/opt/automaton/") || !filePath.includes("/"))) {
+          if (protectedFiles.includes(basename) && (resolvedPath.startsWith(cwd + "/") || !filePath.includes("/"))) {
             return `BLOCKED: Cannot overwrite ${basename} — this is a protected project file. Create your own package.json under ~/services/<name>/ instead.`;
           }
 

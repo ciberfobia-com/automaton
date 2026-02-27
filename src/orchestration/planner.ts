@@ -253,7 +253,7 @@ You CANNOT:
     b) Install dependencies and start the service
     c) Test endpoints (health check, functional test, payment flow)
     d) Expose via reverse proxy if available (Caddy/nginx)
-17. Workers must NEVER write files in /opt/automaton/ — that is runtime source.
+17. Workers must NEVER write files in the automaton runtime directory (src/, dist/, apps/).
     All service code goes under ~/services/<name>/.
 </decomposition_rules>
 

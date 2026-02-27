@@ -393,7 +393,7 @@ GOAL CREATION RULES (READ CAREFULLY):
 - If you can describe the entire goal as one command or one file, it's a TASK, not a goal.
   In that case, do it yourself with exec/write_file.
 - Include success criteria in the description, not implementation details.
-- DEPLOYMENT TOPOLOGY: all services deploy under ~/services/<name>/ — NEVER in /opt/automaton/.
+- DEPLOYMENT TOPOLOGY: all services deploy under ~/services/<name>/ — NEVER in the automaton runtime directory.
 
 DECISION TREE (follow on EVERY turn):
 
